@@ -16,6 +16,12 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+$script:CorePath = Join-Path $PSScriptRoot 'BatchRenamer.Core.ps1'
+if (-not (Test-Path -LiteralPath $script:CorePath)) {
+    throw '找不到 BatchRenamer.Core.ps1，请与本脚本放在同一文件夹。'
+}
+. $script:CorePath
+
 $script:LogFolder = Join-Path $env:TEMP 'BatchRenamerLogs'
 $script:FileItems = @()
 $script:FixedChecks = @()
@@ -137,71 +143,7 @@ function Build-ComposerPlan {
     return $plan.ToArray()
 }
 
-function Invoke-ComposerRename {
-    # 思路：与主程序一致的两阶段改名，先改临时名再改目标名，避免交叉覆盖
-    param([object[]]$Plan)
-
-    $successCount = 0
-    $errors = New-Object System.Collections.ArrayList
-    $undoRecords = New-Object System.Collections.ArrayList
-    $staged = New-Object System.Collections.ArrayList
-
-    foreach ($item in $Plan) {
-        if ($item.Status -ne '可执行') { continue }
-        if (-not (Test-Path -LiteralPath $item.SourcePath)) {
-            [void]$errors.Add("源不存在：$($item.SourceName)")
-            continue
-        }
-        $tempName = '~rn_' + [guid]::NewGuid().ToString('N').Substring(0, 10)
-        try {
-            Rename-Item -LiteralPath $item.SourcePath -NewName $tempName -ErrorAction Stop
-            [void]$staged.Add([pscustomobject]@{
-                Item     = $item
-                TempPath = (Join-Path $item.ParentDir $tempName)
-                TempName = $tempName
-            })
-        } catch {
-            [void]$errors.Add("改名失败（阶段1）：$($item.SourceName) -> $($_.Exception.Message)")
-        }
-    }
-
-    foreach ($entry in $staged) {
-        $item = $entry.Item
-        $targetPath = Join-Path $item.ParentDir $item.NewName
-        try {
-            if (Test-Path -LiteralPath $targetPath) { throw "目标已存在：$($item.NewName)" }
-            Rename-Item -LiteralPath $entry.TempPath -NewName $item.NewName -ErrorAction Stop
-            $successCount++
-            [void]$undoRecords.Add([pscustomobject]@{
-                OldPath = $item.SourcePath
-                NewPath = $targetPath
-                Time    = (Get-Date).ToString('s')
-            })
-        } catch {
-            [void]$errors.Add("改名失败（阶段2）：$($item.SourceName) -> $($_.Exception.Message)")
-            try {
-                Rename-Item -LiteralPath $entry.TempPath -NewName $item.SourceName -ErrorAction Stop
-            } catch {
-                [void]$errors.Add("还原失败：$($item.SourceName) 仍为临时名 $($entry.TempName)")
-            }
-        }
-    }
-
-    $logPath = $null
-    if ($undoRecords.Count -gt 0) {
-        if (-not (Test-Path -LiteralPath $script:LogFolder)) {
-            [void](New-Item -ItemType Directory -Path $script:LogFolder -Force)
-        }
-        $logPath = Join-Path $script:LogFolder ('undo_{0}.csv' -f (Get-Date).ToString('yyyyMMdd_HHmmss_fff'))
-        $undoRecords | Export-Csv -LiteralPath $logPath -NoTypeInformation -Encoding UTF8
-    }
-
-    return [pscustomobject]@{
-        SuccessCount = $successCount
-        Errors       = $errors.ToArray()
-        LogPath      = $logPath
-    }
-}
+# Invoke-ComposerRename 由 BatchRenamer.Core.ps1 提供。
 
 function Get-RowRecords {
     # 思路：把界面表格转成纯数据，供预览计算与执行共用
@@ -227,8 +169,12 @@ function Get-RowRecords {
 }
 
 function Invoke-SelfTest {
-    $root = Join-Path $env:TEMP ('ComposerSelfTest_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $testRoot = Join-Path $env:TEMP ('ComposerSelfTest_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $logFolder = Join-Path $testRoot 'logs'
+    $root = Join-Path $testRoot 'data'
     [void](New-Item -ItemType Directory -Path $root -Force)
+    [void](New-Item -ItemType Directory -Path $logFolder -Force)
+    $officialBefore = Get-BatchRenamerLogFingerprint -LogFolder (Get-BatchRenamerLogFolder)
     try {
         # 文件名含不规律分隔：第一条规整，第二条没有连接符
         [void](New-Item -ItemType File -Path (Join-Path $root '2025-张三-王五.docx'))
@@ -266,7 +212,7 @@ function Invoke-SelfTest {
         if ($firstItem.NewName -ne '2025-张三-李四.docx') { throw "自测失败：拼接结果错误 $($firstItem.NewName)" }
         if ($secondItem.NewName -ne '甲X乙-张三-李四.txt') { throw "自测失败：拼接结果错误 $($secondItem.NewName)" }
 
-        $result = Invoke-ComposerRename -Plan $plan
+        $result = Invoke-ComposerRename -Plan $plan -LogFolder $logFolder
         Write-Output ("RENAMED={0} ERRORS={1}" -f $result.SuccessCount, $result.Errors.Count)
         if ($result.SuccessCount -ne 2) { throw '自测失败：改名数量不符' }
         if (-not (Test-Path -LiteralPath (Join-Path $root '2025-张三-李四.docx'))) { throw '自测失败：缺少目标文件1' }
@@ -274,18 +220,25 @@ function Invoke-SelfTest {
         if (-not $result.LogPath -or -not (Test-Path -LiteralPath $result.LogPath)) { throw '自测失败：未生成撤销日志' }
         $logRecord = @(Import-Csv -LiteralPath $result.LogPath -Encoding UTF8)[0]
         if (-not $logRecord.OldPath -or -not $logRecord.NewPath) { throw '自测失败：日志缺少 OldPath/NewPath' }
-
-        # 清理自测日志，避免影响主程序「撤销」计数
-        Remove-Item -LiteralPath $result.LogPath -Force
+        $undo = Invoke-UndoLatest -LogFolder $logFolder
+        if (-not $undo.MarkedDone) { throw '自测失败：分段撤销未完成' }
+        $officialAfter = Get-BatchRenamerLogFingerprint -LogFolder (Get-BatchRenamerLogFolder)
+        if ($officialBefore -ne $officialAfter) { throw '自测失败：正式日志被改动' }
         Write-Output 'SELFTEST=PASS'
     } finally {
-        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
 if ($SelfTest) {
-    Invoke-SelfTest
-    return
+    try {
+        Invoke-SelfTest
+        exit 0
+    } catch {
+        Write-Output 'SELFTEST=FAIL'
+        Write-Output ('ERROR: ' + $_.Exception.Message)
+        exit 1
+    }
 }
 
 # ---------------------------------------------------------------------------

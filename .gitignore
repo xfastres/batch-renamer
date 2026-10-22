@@ -1,0 +1,8 @@
+.trae_errors.md
+*.tmp
+*.zip
+BatchRenamerLogs/
+BatchRenamerTests_*/
+ComposerSelfTest_*/
+*.csv.done
+*.json.done

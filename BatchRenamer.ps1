@@ -17,6 +17,11 @@ $script:Plan = @()
 $script:LogFolder = Join-Path $env:TEMP 'BatchRenamerLogs'
 $script:ScriptDir = $PSScriptRoot
 $script:BlockedStatuses = @('无效字符', '名称重复', '目标已存在', '名称为空', '有空段')
+$script:CorePath = Join-Path $PSScriptRoot 'BatchRenamer.Core.ps1'
+if (-not (Test-Path -LiteralPath $script:CorePath)) {
+    throw '找不到 BatchRenamer.Core.ps1，请与主程序放在同一文件夹。'
+}
+. $script:CorePath
 
 # ---------------------------------------------------------------------------
 # 纯逻辑函数（不依赖界面，便于自测）
@@ -97,7 +102,7 @@ function Build-Plan {
     if ($Recurse) {
         # 思路：递归时只收集文件。若同时重命名文件夹，子树路径会在遍历后失效，
         # 因此递归模式必须忽略「文件夹」范围。
-        if ($Mode -eq 'Folders') { throw '递归模式下只能处理文件，请把「处理对象」改为「文件」或「两者」。' }
+        if ($Mode -ne 'Files') { throw '递归模式下只能处理文件，请把「处理对象」改为「文件」。' }
         $items = @(Get-ChildItem -LiteralPath $Folder -File -Recurse -ErrorAction Stop)
     } else {
         if ($Mode -eq 'Files' -or $Mode -eq 'Both') {
@@ -160,14 +165,17 @@ function Build-Plan {
         } else { '.' }
 
         [void]$planItems.Add([pscustomobject]@{
-            Index      = $index
-            Type       = if ($isDirectory) { '文件夹' } else { '文件' }
-            SourceName = $item.Name
-            SourcePath = $item.FullName
-            ParentDir  = $parentDir
-            Location   = $location
-            NewName    = $coreName + $extension
-            Status     = '可执行'
+            Index                = $index
+            Type                 = if ($isDirectory) { '文件夹' } else { '文件' }
+            SourceName           = $item.Name
+            SourcePath           = $item.FullName
+            ParentDir            = $parentDir
+            Location             = $location
+            NewName              = $coreName + $extension
+            Status               = '可执行'
+            SourceIsDirectory    = $isDirectory
+            SourceLength         = if ($isDirectory) { $null } else { [int64]$item.Length }
+            SourceLastWriteTimeUtc = $item.LastWriteTimeUtc.ToString('o')
         })
     }
 
@@ -185,7 +193,7 @@ function Build-Plan {
     foreach ($row in $planItems) {
         if ([string]::IsNullOrWhiteSpace($row.NewName)) { $row.Status = '名称为空'; continue }
         if (-not (Test-NameValid -Name $row.NewName)) { $row.Status = '无效字符'; continue }
-        if ($row.NewName -eq $row.SourceName) { $row.Status = '未变化'; continue }
+        if ([string]::Equals($row.NewName, $row.SourceName, [System.StringComparison]::OrdinalIgnoreCase)) { $row.Status = '未变化'; continue }
         $key = ($row.ParentDir + '|' + $row.NewName).ToLowerInvariant()
         if ($targetCount[$key] -gt 1) { $row.Status = '名称重复'; continue }
 
@@ -199,132 +207,27 @@ function Build-Plan {
     return $planItems.ToArray()
 }
 
-function Invoke-RenamePlan {
-    param(
-        [object[]]$Plan
-    )
-
-    $successCount = 0
-    $errors = New-Object System.Collections.ArrayList
-    $undoRecords = New-Object System.Collections.ArrayList
-    $staged = New-Object System.Collections.ArrayList
-
-    # 思路：分两阶段重命名，先全部改成唯一临时名，再改成目标名。
-    # 这样 A→B、B→A 这类交叉改名不会互相覆盖；中途失败也能保留已改名项的撤销记录。
-    foreach ($item in $Plan) {
-        if ($item.Status -ne '可执行') { continue }
-        if (-not (Test-Path -LiteralPath $item.SourcePath)) {
-            [void]$errors.Add("源不存在：$($item.SourceName)")
-            continue
-        }
-        $tempName = '~rn_' + [guid]::NewGuid().ToString('N').Substring(0, 10)
-        try {
-            Rename-Item -LiteralPath $item.SourcePath -NewName $tempName -ErrorAction Stop
-            [void]$staged.Add([pscustomobject]@{
-                Item      = $item
-                TempPath  = (Join-Path $item.ParentDir $tempName)
-                TempName  = $tempName
-            })
-        } catch {
-            [void]$errors.Add("改名失败（阶段1）：$($item.SourceName) -> $($_.Exception.Message)")
-        }
+function Format-RenameResultMessage {
+    param($Result, [string]$Action = '执行')
+    $outcome = [string]$Result.Outcome
+    $message = "$Action 结果：$outcome`r`n成功 $($Result.SuccessCount) 个"
+    if ($Result.PSObject.Properties['RestoredCount']) {
+        $message += "，已退回原名 $($Result.RestoredCount) 个"
     }
-
-    foreach ($entry in $staged) {
-        $item = $entry.Item
-        $targetPath = Join-Path $item.ParentDir $item.NewName
-        try {
-            if (Test-Path -LiteralPath $targetPath) { throw "目标已存在：$($item.NewName)" }
-            Rename-Item -LiteralPath $entry.TempPath -NewName $item.NewName -ErrorAction Stop
-            $successCount++
-            [void]$undoRecords.Add([pscustomobject]@{
-                OldPath = $item.SourcePath
-                NewPath = $targetPath
-                Time    = (Get-Date).ToString('s')
-            })
-        } catch {
-            # 阶段2失败时尝试还原临时名，避免留下 ~rn_ 垃圾名
-            [void]$errors.Add("改名失败（阶段2）：$($item.SourceName) -> $($_.Exception.Message)")
-            try {
-                Rename-Item -LiteralPath $entry.TempPath -NewName $item.SourceName -ErrorAction Stop
-            } catch {
-                [void]$errors.Add("还原失败：$($item.SourceName) 仍为临时名 $($entry.TempName)")
-            }
-        }
+    if ($Result.NeedsAttentionCount -gt 0) {
+        $message += "，待恢复 $($Result.NeedsAttentionCount) 个"
     }
-
-    $logPath = $null
-    if ($undoRecords.Count -gt 0) {
-        if (-not (Test-Path -LiteralPath $script:LogFolder)) {
-            [void](New-Item -ItemType Directory -Path $script:LogFolder -Force)
-        }
-        # 日志名带毫秒，避免同一秒内连续执行两次互相覆盖
-        $logPath = Join-Path $script:LogFolder ('undo_{0}.csv' -f (Get-Date).ToString('yyyyMMdd_HHmmss_fff'))
-        $undoRecords | Export-Csv -LiteralPath $logPath -NoTypeInformation -Encoding UTF8
+    $message += "，失败 $($Result.Errors.Count) 个。"
+    if ($Result.TransactionId) { $message += "`r`n事务：$($Result.TransactionId)" }
+    if ($Result.Errors.Count -gt 0) {
+        $message += "`r`n`r`n前 10 条：`r`n" + (($Result.Errors | Select-Object -First 10) -join "`r`n")
     }
-
-    return [pscustomobject]@{
-        SuccessCount = $successCount
-        Errors       = $errors.ToArray()
-        LogPath      = $logPath
+    if ($Result.LogPath) { $message += "`r`n`r`n撤销日志：$($Result.LogPath)" }
+    if ($Result.JournalPath) { $message += "`r`n事务记录：$($Result.JournalPath)" }
+    if ($Result.NeedsAttentionCount -gt 0) {
+        $message += "`r`n`r`n请勿手动删除 ~rn_ 临时名。可稍后再次撤销或启动时选择恢复。"
     }
-}
-
-function Get-UndoLogs {
-    # 思路：已撤销的日志会被重命名为 .done，文件名不再匹配 undo_*.csv，
-    # 于是「撤销」可以按从新到旧连续回退，形成多步撤销栈
-    if (-not (Test-Path -LiteralPath $script:LogFolder)) { return @() }
-    return @(Get-ChildItem -LiteralPath $script:LogFolder -Filter 'undo_*.csv' -File -ErrorAction SilentlyContinue |
-        Sort-Object Name -Descending)
-}
-
-function Get-UndoCount {
-    return @(Get-UndoLogs).Count
-}
-
-function Invoke-UndoLatest {
-    $logs = @(Get-UndoLogs)
-    if ($logs.Count -eq 0) { throw '没有找到可撤销的操作记录。' }
-    $logFile = $logs[0]
-
-    $records = @(Import-Csv -LiteralPath $logFile.FullName -Encoding UTF8)
-    $restored = 0
-    $errors = New-Object System.Collections.ArrayList
-
-    # 逆序还原，处理连续多次重命名的情况
-    [array]::Reverse($records)
-    foreach ($record in $records) {
-        try {
-            if (-not (Test-Path -LiteralPath $record.NewPath)) {
-                throw "当前名称不存在：$($record.NewPath)"
-            }
-            if (Test-Path -LiteralPath $record.OldPath) {
-                throw "原名称已被占用：$($record.OldPath)"
-            }
-            Rename-Item -LiteralPath $record.NewPath -NewName (Split-Path -Leaf $record.OldPath) -ErrorAction Stop
-            $restored++
-        } catch {
-            [void]$errors.Add($_.Exception.Message)
-        }
-    }
-
-    # 全部还原成功才把日志标记为已撤销；有失败就保留，方便用户处理后重试
-    $markedDone = $false
-    if ($errors.Count -eq 0) {
-        try {
-            Rename-Item -LiteralPath $logFile.FullName -NewName ($logFile.Name + '.done') -ErrorAction Stop
-            $markedDone = $true
-        } catch {
-            [void]$errors.Add("日志标记失败：$($_.Exception.Message)")
-        }
-    }
-
-    return [pscustomobject]@{
-        RestoredCount = $restored
-        Errors        = $errors.ToArray()
-        LogPath       = $logFile.FullName
-        MarkedDone    = $markedDone
-    }
+    return $message
 }
 
 function ConvertTo-PreviewTable {
@@ -355,11 +258,12 @@ function ConvertTo-PreviewTable {
 # 自测：在临时目录跑一遍 预览 -> 重命名 -> 撤销
 # ---------------------------------------------------------------------------
 function Invoke-SelfTest {
-    $rootA = Join-Path $env:TEMP ('BatchRenamerSelfTestA_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
-    $rootB = Join-Path $env:TEMP ('BatchRenamerSelfTestB_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    param([string]$LogFolder)
+    if ([string]::IsNullOrWhiteSpace($LogFolder)) { throw '自测必须提供独立日志目录。' }
+    $rootA = Join-Path $LogFolder 'dataA'
+    $rootB = Join-Path $LogFolder 'dataB'
     [void](New-Item -ItemType Directory -Path $rootA -Force)
     [void](New-Item -ItemType Directory -Path $rootB -Force)
-    $logsBefore = Get-UndoCount
     try {
         # 场景A：顶层 5 文件 + 2 文件夹，序号命名
         foreach ($name in @('b.txt', '10.txt', 'a.txt', '2.txt', 'c.log')) {
@@ -419,18 +323,18 @@ function Invoke-SelfTest {
         }
 
         # 执行 A、B，连续撤销两次，验证多步撤销
-        $resultA = Invoke-RenamePlan -Plan $planA
-        Write-Output ("RENAMED_A={0} ERRORS={1}" -f $resultA.SuccessCount, $resultA.Errors.Count)
+        $resultA = Invoke-RenamePlan -Plan $planA -LogFolder $LogFolder
+        Write-Output ("RENAMED_A={0} ERRORS={1} OUTCOME={2}" -f $resultA.SuccessCount, $resultA.Errors.Count, $resultA.Outcome)
         if ($resultA.SuccessCount -ne 7) { throw '自测失败：A 重命名数量不符' }
-        $resultB = Invoke-RenamePlan -Plan $planB
-        Write-Output ("RENAMED_B={0} ERRORS={1}" -f $resultB.SuccessCount, $resultB.Errors.Count)
+        $resultB = Invoke-RenamePlan -Plan $planB -LogFolder $LogFolder
+        Write-Output ("RENAMED_B={0} ERRORS={1} OUTCOME={2}" -f $resultB.SuccessCount, $resultB.Errors.Count, $resultB.Outcome)
         if ($resultB.SuccessCount -ne 2) { throw '自测失败：B 重命名数量不符' }
         if (-not (Test-Path -LiteralPath (Join-Path $rootB 'a\P_pic1.JPG'))) { throw '自测失败：缺少 a\P_pic1.JPG' }
 
-        $undo1 = Invoke-UndoLatest
+        $undo1 = Invoke-UndoLatest -LogFolder $LogFolder
         Write-Output ("UNDO1={0} ERRORS={1} DONE={2}" -f $undo1.RestoredCount, $undo1.Errors.Count, $undo1.MarkedDone)
         if ($undo1.RestoredCount -ne 2 -or -not $undo1.MarkedDone) { throw '自测失败：第一步撤销不符' }
-        $undo2 = Invoke-UndoLatest
+        $undo2 = Invoke-UndoLatest -LogFolder $LogFolder
         Write-Output ("UNDO2={0} ERRORS={1} DONE={2}" -f $undo2.RestoredCount, $undo2.Errors.Count, $undo2.MarkedDone)
         if ($undo2.RestoredCount -ne 7 -or -not $undo2.MarkedDone) { throw '自测失败：第二步撤销不符' }
 
@@ -438,11 +342,7 @@ function Invoke-SelfTest {
             if (-not (Test-Path -LiteralPath (Join-Path $rootA $name))) { throw "自测失败：未还原 $name" }
         }
         if (-not (Test-Path -LiteralPath (Join-Path $rootB 'a\photo1.JPG'))) { throw '自测失败：未还原 a\photo1.JPG' }
-        if ((Get-UndoCount) -ne $logsBefore) { throw '自测失败：撤销后剩余日志数与预期不符' }
-        Write-Output 'SELFTEST=PASS'
-    } catch {
-        Write-Output 'SELFTEST=FAIL'
-        Write-Output ("ERROR: " + $_.Exception.Message)
+        if ((Get-UndoCount -LogFolder $LogFolder) -ne 0) { throw '自测失败：测试日志撤销后仍有未完成 CSV' }
     } finally {
         Remove-Item -LiteralPath $rootA -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $rootB -Recurse -Force -ErrorAction SilentlyContinue
@@ -493,113 +393,63 @@ function Compose-Name {
 }
 
 function Build-ComposerPlan {
-    # 思路：一次性算出每行的新名称与状态，冲突检测覆盖跨行重名和磁盘已存在
+    # 冲突规则与序号模式一致：同目录重名、批内让出名称可执行、批外占用才阻止
     param(
         [object[]]$Rows,
         [string]$Separator
     )
     $plan = New-Object System.Collections.ArrayList
-    $usedNames = @{ }
-
     foreach ($row in $Rows) {
         $segments = [string[]]$row.Segments
         $newName = Compose-Name -Segments $segments -Separator $Separator -Extension $row.Extension
         $status = '可执行'
-
         $emptySegment = @($segments | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count
         if ($emptySegment -gt 0) {
             $status = '有空段'
+        } elseif ([string]::IsNullOrWhiteSpace($newName)) {
+            $status = '名称为空'
         } elseif (-not (Test-NameValid -Name $newName)) {
             $status = '无效字符'
         } elseif ([string]::Equals($row.Name, $newName, [System.StringComparison]::OrdinalIgnoreCase)) {
             $status = '未变化'
-        } elseif ($usedNames.ContainsKey($newName.ToLowerInvariant())) {
-            $status = '名称重复'
-        } elseif (Test-Path -LiteralPath (Join-Path $row.ParentDir $newName)) {
-            $status = '目标已存在'
-        }
-
-        if (-not [string]::IsNullOrWhiteSpace($newName) -and -not $usedNames.ContainsKey($newName.ToLowerInvariant())) {
-            $usedNames[$newName.ToLowerInvariant()] = $true
         }
 
         [void]$plan.Add([pscustomobject]@{
-            SourcePath = $row.SourcePath
-            ParentDir  = $row.ParentDir
-            SourceName = $row.Name
-            NewName    = $newName
-            Status     = $status
-            Segments   = $segments
+            SourcePath             = $row.SourcePath
+            ParentDir              = $row.ParentDir
+            SourceName             = $row.Name
+            NewName                = $newName
+            Status                 = $status
+            Segments               = $segments
+            SourceIsDirectory      = $false
+            SourceLength           = $row.SourceLength
+            SourceLastWriteTimeUtc = $row.SourceLastWriteTimeUtc
         })
+    }
+
+    $sourceMap = @{}
+    foreach ($row in $plan) { $sourceMap[(Get-BatchRenamerPathKey -Path $row.SourcePath)] = $row }
+    $targetCount = @{}
+    foreach ($row in $plan) {
+        $key = (Get-BatchRenamerPathKey -Path ($row.ParentDir + '|' + $row.NewName))
+        if ($targetCount.ContainsKey($key)) { $targetCount[$key]++ } else { $targetCount[$key] = 1 }
+    }
+    foreach ($row in $plan) {
+        if ($script:BlockedStatuses -contains $row.Status -or $row.Status -eq '未变化' -or $row.Status -eq '有空段') { continue }
+        $key = (Get-BatchRenamerPathKey -Path ($row.ParentDir + '|' + $row.NewName))
+        if ($targetCount[$key] -gt 1) { $row.Status = '名称重复'; continue }
+        $targetPath = Join-Path $row.ParentDir $row.NewName
+        if (Test-Path -LiteralPath $targetPath) {
+            $owner = $sourceMap[(Get-BatchRenamerPathKey -Path $targetPath)]
+            if (-not $owner -or [string]::Equals($owner.NewName, $owner.SourceName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $row.Status = '目标已存在'
+            }
+        }
     }
     return $plan.ToArray()
 }
 
-function Invoke-ComposerRename {
-    # 思路：与主程序一致的两阶段改名，先改临时名再改目标名，避免交叉覆盖
-    param([object[]]$Plan)
-
-    $successCount = 0
-    $errors = New-Object System.Collections.ArrayList
-    $undoRecords = New-Object System.Collections.ArrayList
-    $staged = New-Object System.Collections.ArrayList
-
-    foreach ($item in $Plan) {
-        if ($item.Status -ne '可执行') { continue }
-        if (-not (Test-Path -LiteralPath $item.SourcePath)) {
-            [void]$errors.Add("源不存在：$($item.SourceName)")
-            continue
-        }
-        $tempName = '~rn_' + [guid]::NewGuid().ToString('N').Substring(0, 10)
-        try {
-            Rename-Item -LiteralPath $item.SourcePath -NewName $tempName -ErrorAction Stop
-            [void]$staged.Add([pscustomobject]@{
-                Item     = $item
-                TempPath = (Join-Path $item.ParentDir $tempName)
-                TempName = $tempName
-            })
-        } catch {
-            [void]$errors.Add("改名失败（阶段1）：$($item.SourceName) -> $($_.Exception.Message)")
-        }
-    }
-
-    foreach ($entry in $staged) {
-        $item = $entry.Item
-        $targetPath = Join-Path $item.ParentDir $item.NewName
-        try {
-            if (Test-Path -LiteralPath $targetPath) { throw "目标已存在：$($item.NewName)" }
-            Rename-Item -LiteralPath $entry.TempPath -NewName $item.NewName -ErrorAction Stop
-            $successCount++
-            [void]$undoRecords.Add([pscustomobject]@{
-                OldPath = $item.SourcePath
-                NewPath = $targetPath
-                Time    = (Get-Date).ToString('s')
-            })
-        } catch {
-            [void]$errors.Add("改名失败（阶段2）：$($item.SourceName) -> $($_.Exception.Message)")
-            try {
-                Rename-Item -LiteralPath $entry.TempPath -NewName $item.SourceName -ErrorAction Stop
-            } catch {
-                [void]$errors.Add("还原失败：$($item.SourceName) 仍为临时名 $($entry.TempName)")
-            }
-        }
-    }
-
-    $logPath = $null
-    if ($undoRecords.Count -gt 0) {
-        if (-not (Test-Path -LiteralPath $script:LogFolder)) {
-            [void](New-Item -ItemType Directory -Path $script:LogFolder -Force)
-        }
-        $logPath = Join-Path $script:LogFolder ('undo_{0}.csv' -f (Get-Date).ToString('yyyyMMdd_HHmmss_fff'))
-        $undoRecords | Export-Csv -LiteralPath $logPath -NoTypeInformation -Encoding UTF8
-    }
-
-    return [pscustomobject]@{
-        SuccessCount = $successCount
-        Errors       = $errors.ToArray()
-        LogPath      = $logPath
-    }
-}
+# Invoke-ComposerRename 已由 BatchRenamer.Core.ps1 提供，与序号模式共用同一事务引擎。
 
 function Get-RowRecords {
     # 思路：把界面表格转成纯数据，供预览计算与执行共用
@@ -613,12 +463,22 @@ function Get-RowRecords {
             [void]$segments.Add([string]$gridRow.Cells[$index + 1].Value)
         }
         $extension = [System.IO.Path]::GetExtension($name)
+        $sourcePath = Join-Path $FolderPath $name
+        $length = $null
+        $writeTime = ''
+        if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {
+            $item = Get-Item -LiteralPath $sourcePath -Force
+            $length = [int64]$item.Length
+            $writeTime = $item.LastWriteTimeUtc.ToString('o')
+        }
         [void]$rows.Add([pscustomobject]@{
-            SourcePath = (Join-Path $FolderPath $name)
-            ParentDir  = $FolderPath
-            Name       = $name
-            Extension  = $extension
-            Segments   = [string[]]$segments.ToArray()
+            SourcePath             = $sourcePath
+            ParentDir              = $FolderPath
+            Name                   = $name
+            Extension              = $extension
+            Segments               = [string[]]$segments.ToArray()
+            SourceLength           = $length
+            SourceLastWriteTimeUtc = $writeTime
         })
     }
     return $rows.ToArray()
@@ -637,7 +497,9 @@ function Get-SegmentFolderItems {
 }
 
 function Invoke-ComposerSelfTest {
-    $root = Join-Path $env:TEMP ('ComposerSelfTest_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    param([string]$LogFolder)
+    if ([string]::IsNullOrWhiteSpace($LogFolder)) { throw '分段自测必须提供独立日志目录。' }
+    $root = Join-Path $LogFolder 'composerData'
     [void](New-Item -ItemType Directory -Path $root -Force)
     try {
         # 文件名含不规律分隔：第一条规整，第二条没有连接符
@@ -676,8 +538,8 @@ function Invoke-ComposerSelfTest {
         if ($firstItem.NewName -ne '2025-张三-李四.docx') { throw "自测失败：拼接结果错误 $($firstItem.NewName)" }
         if ($secondItem.NewName -ne '甲X乙-张三-李四.txt') { throw "自测失败：拼接结果错误 $($secondItem.NewName)" }
 
-        $result = Invoke-ComposerRename -Plan $plan
-        Write-Output ("RENAMED={0} ERRORS={1}" -f $result.SuccessCount, $result.Errors.Count)
+        $result = Invoke-ComposerRename -Plan $plan -LogFolder $LogFolder
+        Write-Output ("RENAMED={0} ERRORS={1} OUTCOME={2}" -f $result.SuccessCount, $result.Errors.Count, $result.Outcome)
         if ($result.SuccessCount -ne 2) { throw '自测失败：改名数量不符' }
         if (-not (Test-Path -LiteralPath (Join-Path $root '2025-张三-李四.docx'))) { throw '自测失败：缺少目标文件1' }
         if (-not (Test-Path -LiteralPath (Join-Path $root '甲X乙-张三-李四.txt'))) { throw '自测失败：缺少目标文件2' }
@@ -685,18 +547,60 @@ function Invoke-ComposerSelfTest {
         $logRecord = @(Import-Csv -LiteralPath $result.LogPath -Encoding UTF8)[0]
         if (-not $logRecord.OldPath -or -not $logRecord.NewPath) { throw '自测失败：日志缺少 OldPath/NewPath' }
 
-        # 清理自测日志，避免影响主程序「撤销」计数
-        Remove-Item -LiteralPath $result.LogPath -Force
-        Write-Output 'COMPOSER_SELFTEST=PASS'
+        $undo = Invoke-UndoLatest -LogFolder $LogFolder
+        Write-Output ("COMPOSER_UNDO={0} DONE={1}" -f $undo.RestoredCount, $undo.MarkedDone)
+        if ($undo.RestoredCount -ne 2 -or -not $undo.MarkedDone) { throw '自测失败：分段撤销不符' }
+        if (-not (Test-Path -LiteralPath (Join-Path $root '2025-张三-王五.docx'))) { throw '自测失败：未还原文件1' }
+        if (-not (Test-Path -LiteralPath (Join-Path $root '甲X乙.txt'))) { throw '自测失败：未还原文件2' }
     } finally {
         Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
 if ($SelfTest) {
-    Invoke-SelfTest
-    Invoke-ComposerSelfTest
-    exit
+    $officialLogs = Get-BatchRenamerLogFolder
+    $fingerprintBefore = Get-BatchRenamerLogFingerprint -LogFolder $officialLogs
+    $testRoot = Join-Path $env:TEMP ('BatchRenamerTests_' + [guid]::NewGuid().ToString('N'))
+    $testLogs = Join-Path $testRoot 'logs'
+    $failed = New-Object System.Collections.ArrayList
+    try {
+        [void](New-Item -ItemType Directory -Path $testLogs -Force)
+        try {
+            Invoke-SelfTest -LogFolder $testLogs
+            Write-Output 'SUBTEST=Sequence PASS'
+        } catch {
+            [void]$failed.Add('Sequence: ' + $_.Exception.Message)
+            Write-Output 'SUBTEST=Sequence FAIL'
+            Write-Output ('ERROR: ' + $_.Exception.Message)
+        }
+        try {
+            Invoke-ComposerSelfTest -LogFolder $testLogs
+            Write-Output 'SUBTEST=Composer PASS'
+        } catch {
+            [void]$failed.Add('Composer: ' + $_.Exception.Message)
+            Write-Output 'SUBTEST=Composer FAIL'
+            Write-Output ('ERROR: ' + $_.Exception.Message)
+        }
+    } finally {
+        if (Test-Path -LiteralPath $testRoot) {
+            Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $testRoot) {
+                [void]$failed.Add("未能清理测试目录：$testRoot")
+                Write-Output ("WARN: 未能清理测试目录 $testRoot")
+            }
+        }
+    }
+    $fingerprintAfter = Get-BatchRenamerLogFingerprint -LogFolder $officialLogs
+    if ($fingerprintBefore -ne $fingerprintAfter) {
+        [void]$failed.Add('正式撤销日志在自测后发生变化')
+    }
+    if ($failed.Count -gt 0) {
+        Write-Output 'SELFTEST=FAIL'
+        foreach ($item in $failed) { Write-Output ('FAIL_ITEM: ' + $item) }
+        exit 1
+    }
+    Write-Output 'SELFTEST=PASS'
+    exit 0
 }
 
 # ---------------------------------------------------------------------------
@@ -717,6 +621,8 @@ $script:RestoringFixed = $false
 # 固定值控件上一次排布时的容器宽度，窗口尺寸变化后据此判断是否需要重排
 $script:FixedPanelWidth = 0
 $script:ActiveView = 'sequence'
+$script:SeqPlanDirty = $true
+$script:SegmentStale = $true
 
 $font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
 $fontBold = New-Object System.Drawing.Font('Microsoft YaHei UI', 9, [System.Drawing.FontStyle]::Bold)
@@ -917,13 +823,18 @@ function New-StatTag {
 
 # ===== 窗体骨架 =====
 $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$clientWidth = [math]::Min(1200, [math]::Max(1080, $workArea.Width - 60))
-$clientHeight = [math]::Min(880, [math]::Max(760, $workArea.Height - 70))
+$clientWidth = [math]::Min(1200, [math]::Max(900, $workArea.Width - 60))
+$clientHeight = [math]::Min(880, [math]::Max(640, $workArea.Height - 70))
+if ($clientWidth -gt $workArea.Width) { $clientWidth = [math]::Max(640, $workArea.Width - 20) }
+if ($clientHeight -gt $workArea.Height) { $clientHeight = [math]::Max(480, $workArea.Height - 20) }
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = '批量重命名工具'
 $form.ClientSize = New-Object System.Drawing.Size($clientWidth, $clientHeight)
-$form.MinimumSize = New-Object System.Drawing.Size(1080, 760)
+$minWidth = [math]::Min(1080, [math]::Max(800, $workArea.Width - 16))
+$minHeight = [math]::Min(760, [math]::Max(560, $workArea.Height - 16))
+$form.MinimumSize = New-Object System.Drawing.Size($minWidth, $minHeight)
+$form.AutoScaleMode = 'Font'
 $form.StartPosition = 'CenterScreen'
 $form.Font = $font
 $form.BackColor = Get-Color '#F4F5F7'
@@ -1353,6 +1264,7 @@ $btnSeqExecute.Size = New-Object System.Drawing.Size(120, 30)
 $btnSeqExecute.Anchor = 'Bottom,Right'
 $actionBar.Controls.Add($btnSeqExecute)
 Initialize-ButtonStyle -Button $btnSeqExecute -Kind 'Primary'
+$btnSeqExecute.Enabled = $false
 
 $btnSeqPreview = New-Object System.Windows.Forms.Button
 $btnSeqPreview.Text = '预览'
@@ -1564,13 +1476,18 @@ function Show-View {
         if ([string]::IsNullOrWhiteSpace($txtSegFolder.Text) -and $seqFolder) {
             $txtSegFolder.Text = $seqFolder
         }
-        # 已有路径但表格还是空的（例如启动参数带入的路径），进入时自动读一次
         $segFolder = $txtSegFolder.Text.Trim()
-        if ($gridSeg.Rows.Count -eq 0 -and $segFolder) {
+        $needLoad = $false
+        if ($segFolder) {
+            if ($gridSeg.Rows.Count -eq 0) { $needLoad = $true }
+            if ($script:SegmentStale) { $needLoad = $true }
+        }
+        if ($needLoad) {
             try {
                 Load-SegmentFiles -FolderPath $segFolder
                 Rebuild-SegmentGrid
                 [void](Refresh-SegmentStatus)
+                $script:SegmentStale = $false
             } catch {
                 $lblSegCount.Text = $_.Exception.Message
             }
@@ -1636,6 +1553,32 @@ function Update-UndoButton {
     $btnSeqUndo.Text = if ($count -gt 0) { "撤销（剩 $count 步）" } else { '撤销' }
 }
 
+function Set-SequencePlanDirty {
+    $script:SeqPlanDirty = $true
+    if ($btnSeqExecute) {
+        $btnSeqExecute.Enabled = $false
+        if ($script:Plan.Count -gt 0) {
+            $lblSeqCount.Text = '参数已变化，请重新预览。'
+        }
+    }
+}
+
+function Update-SequenceExecuteState {
+    $blocked = @($script:Plan | Where-Object { $script:BlockedStatuses -contains $_.Status }).Count
+    $executable = @($script:Plan | Where-Object Status -eq '可执行').Count
+    $canRun = (-not $script:SeqPlanDirty) -and ($script:Plan.Count -gt 0) -and ($executable -gt 0) -and ($blocked -eq 0)
+    $btnSeqExecute.Enabled = $canRun
+}
+
+function Notify-DirectoryChanged {
+    $script:Plan = @()
+    $script:SeqPlanDirty = $true
+    $script:SegmentStale = $true
+    if ($gridSeq) { $gridSeq.DataSource = $null }
+    Update-SequenceExecuteState
+    Update-UndoButton
+}
+
 function Update-SequenceStats {
     param([int]$Total, [int]$Executable, [int]$Unchanged, [int]$Blocked)
     $lblSeqCount.Text = "共 $Total 项"
@@ -1690,6 +1633,8 @@ function Update-SequencePreview {
     $unchangedCount = @($script:Plan | Where-Object Status -eq '未变化').Count
     $executableCount = @($script:Plan | Where-Object Status -eq '可执行').Count
     Update-SequenceStats -Total $script:Plan.Count -Executable $executableCount -Unchanged $unchangedCount -Blocked $blockedCount
+    $script:SeqPlanDirty = $false
+    Update-SequenceExecuteState
 
     # 位数不足时提示，避免出现 999 与 1000 混排
     $lblSeqCount.Text = "共 $($script:Plan.Count) 项"
@@ -1929,20 +1874,39 @@ $btnSeqBrowse.Add_Click({
     if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $txtSeqFolder.Text = $dialog.SelectedPath
         Update-SequenceSample
+        Set-SequencePlanDirty
     }
 })
 
-$txtPrefix.Add_TextChanged({ Update-SequenceSample })
-$txtSuffix.Add_TextChanged({ Update-SequenceSample })
-$numStart.Add_ValueChanged({ Update-SequenceSample })
-$numDigits.Add_ValueChanged({ Update-SequenceSample })
-$cmbNameMode.Add_SelectedIndexChanged({ Update-ReplaceAvailability; Update-SequenceSample })
-$chkReplace.Add_CheckedChanged({ Update-SequenceSample })
+$txtPrefix.Add_TextChanged({ Update-SequenceSample; Set-SequencePlanDirty })
+$txtSuffix.Add_TextChanged({ Update-SequenceSample; Set-SequencePlanDirty })
+$numStart.Add_ValueChanged({ Update-SequenceSample; Set-SequencePlanDirty })
+$numDigits.Add_ValueChanged({ Update-SequenceSample; Set-SequencePlanDirty })
+$cmbNameMode.Add_SelectedIndexChanged({ Update-ReplaceAvailability; Update-SequenceSample; Set-SequencePlanDirty })
+$chkReplace.Add_CheckedChanged({ Update-SequenceSample; Set-SequencePlanDirty })
+$txtSeqFolder.Add_TextChanged({ Set-SequencePlanDirty })
+$cmbSort.Add_SelectedIndexChanged({ Set-SequencePlanDirty })
+$txtExtFilter.Add_TextChanged({ Set-SequencePlanDirty })
+$txtFind.Add_TextChanged({ Set-SequencePlanDirty })
+$txtReplaceNew.Add_TextChanged({ Set-SequencePlanDirty })
+$chkCase.Add_CheckedChanged({ Set-SequencePlanDirty })
+$rbFiles.Add_CheckedChanged({ Set-SequencePlanDirty })
+$rbFolders.Add_CheckedChanged({ Set-SequencePlanDirty })
+$rbBoth.Add_CheckedChanged({ Set-SequencePlanDirty })
+$rbInclude.Add_CheckedChanged({ Set-SequencePlanDirty })
+$rbExclude.Add_CheckedChanged({ Set-SequencePlanDirty })
 
-# 递归模式只处理文件：勾选后锁定「文件夹」，避免边改名边遍历导致子项路径失效
+# 递归只处理文件：同时禁用「文件夹」和「两者」，避免 UI 可选但实际忽略
 $chkRecurse.Add_CheckedChanged({
-    if ($chkRecurse.Checked -and $rbFolders.Checked) { $rbFiles.Checked = $true }
-    $rbFolders.Enabled = -not $chkRecurse.Checked
+    if ($chkRecurse.Checked) {
+        $rbFiles.Checked = $true
+        $rbFolders.Enabled = $false
+        $rbBoth.Enabled = $false
+    } else {
+        $rbFolders.Enabled = $true
+        $rbBoth.Enabled = $true
+    }
+    Set-SequencePlanDirty
 })
 
 $btnSeqPreview.Add_Click({
@@ -1964,24 +1928,25 @@ $btnSeqExecute.Add_Click({
         $validCount = @($script:Plan | Where-Object Status -eq '可执行').Count
         if ($validCount -eq 0) { throw '没有需要重命名的对象。' }
 
+        $fileCount = @($script:Plan | Where-Object { $_.Type -eq '文件' -and $_.Status -eq '可执行' }).Count
+        $dirCount = @($script:Plan | Where-Object { $_.Type -eq '文件夹' -and $_.Status -eq '可执行' }).Count
+        $samples = @($script:Plan | Where-Object Status -eq '可执行' | Select-Object -First 5 | ForEach-Object { "$($_.SourceName) -> $($_.NewName)" })
+        $confirmText = "目标目录：$($txtSeqFolder.Text.Trim())`r`n计划 $($script:Plan.Count) 项，将变更 $validCount 项（文件 $fileCount / 文件夹 $dirCount）`r`n计划状态：当前预览（未过期）`r`n`r`n示例：`r`n" + ($samples -join "`r`n") + "`r`n`r`n执行后可用撤销回退。是否继续？"
         $confirm = [System.Windows.Forms.MessageBox]::Show(
-            "即将重命名 $validCount 个对象。执行后可用「撤销」连续回退（支持多步）。是否继续？",
+            $confirmText,
             '确认执行', [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Question)
         if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
         $result = Invoke-RenamePlan -Plan $script:Plan
-        $message = "成功 $($result.SuccessCount) 个，失败 $($result.Errors.Count) 个。"
-        if ($result.Errors.Count -gt 0) {
-            $message += "`r`n`r`n前 10 条错误：`r`n" + (($result.Errors | Select-Object -First 10) -join "`r`n")
-        }
-        if ($result.LogPath) { $message += "`r`n`r`n撤销日志：$($result.LogPath)" }
+        $message = Format-RenameResultMessage -Result $result -Action '执行'
+        $icon = if ($result.NeedsAttentionCount -gt 0 -or $result.Outcome -eq 'CompleteFailure') {
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        } else { [System.Windows.Forms.MessageBoxIcon]::Information }
         [void][System.Windows.Forms.MessageBox]::Show($message, '执行结果',
-            [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            [System.Windows.Forms.MessageBoxButtons]::OK, $icon)
 
-        $gridSeq.DataSource = $null
-        $script:Plan = @()
-        Update-UndoButton
+        Notify-DirectoryChanged
         $lblSeqCount.Text = '执行完成，请重新预览。'
     } catch {
         [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, '执行失败',
@@ -2001,18 +1966,19 @@ $btnSeqUndo.Add_Click({
         if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
         $result = Invoke-UndoLatest
-        $message = "已还原 $($result.RestoredCount) 个，失败 $($result.Errors.Count) 个。"
+        $message = "撤销结果：$($result.Outcome)`r`n已还原 $($result.RestoredCount) 个，失败 $($result.Errors.Count) 个。"
+        if ($result.NeedsAttentionCount -gt 0) {
+            $message += "`r`n待恢复 $($result.NeedsAttentionCount) 个（未覆盖占用位置）。"
+        }
         if ($result.Errors.Count -gt 0) {
             $message += "`r`n`r`n前 10 条错误：`r`n" + (($result.Errors | Select-Object -First 10) -join "`r`n")
-            $message += "`r`n`r`n该条记录已保留，处理完占用后可再次点击撤销重试。"
+            $message += "`r`n`r`n该条记录已保留，处理完占用后可再次点击撤销重试。请勿删除 ~rn_ 临时名。"
         } else {
             $message += "`r`n`r`n该步已标记完成，可继续撤销更早的操作。"
         }
         [void][System.Windows.Forms.MessageBox]::Show($message, '撤销结果',
             [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-        $gridSeq.DataSource = $null
-        $script:Plan = @()
-        Update-UndoButton
+        Notify-DirectoryChanged
     } catch {
         [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, '撤销失败',
             [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
@@ -2132,17 +2098,18 @@ $btnSegRun.Add_Click({
         if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
         $result = Invoke-ComposerRename -Plan $executable
-        $message = "已改名 $($result.SuccessCount) 个，失败 $($result.Errors.Count) 个。"
-        if ($result.Errors.Count -gt 0) {
-            $message += "`r`n`r`n前 10 条错误：`r`n" + (($result.Errors | Select-Object -First 10) -join "`r`n")
-        }
+        $message = Format-RenameResultMessage -Result $result -Action '分段改名'
+        $icon = if ($result.NeedsAttentionCount -gt 0 -or $result.Outcome -eq 'CompleteFailure') {
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        } else { [System.Windows.Forms.MessageBoxIcon]::Information }
         [void][System.Windows.Forms.MessageBox]::Show($message, '执行结果',
-            [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            [System.Windows.Forms.MessageBoxButtons]::OK, $icon)
 
+        Notify-DirectoryChanged
         Load-SegmentFiles -FolderPath $txtSegFolder.Text.Trim()
         Rebuild-SegmentGrid
         [void](Refresh-SegmentStatus)
-        Update-UndoButton
+        $script:SegmentStale = $false
     } catch {
         [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, '无法执行',
             [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
@@ -2155,6 +2122,32 @@ $form.Add_Shown({
     Update-UndoButton
     # 段数默认 3 时先建一次固定值控件，避免首次进入分段视图时是空的
     Rebuild-FixedControls
+    $pending = @(Get-PendingBatchRenamerJournals)
+    if ($pending.Count -gt 0) {
+        $summary = Format-BatchRenamerPendingSummary -Journals $pending
+        $choice = [System.Windows.Forms.MessageBox]::Show(
+            "发现 $($pending.Count) 个未完成事务，不会自动删除 ~rn_ 临时名。`r`n`r`n$summary`r`n`r`n是否现在尝试安全恢复？",
+            '未完成事务',
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Warning)
+        if ($choice -eq [System.Windows.Forms.DialogResult]::Yes) {
+            $recoverLines = New-Object System.Collections.ArrayList
+            foreach ($journal in $pending) {
+                try {
+                    $recoverResult = Invoke-BatchRenamerRecoverJournal -Journal $journal
+                    [void]$recoverLines.Add(('事务 {0}：{1}' -f $journal.TransactionId, $recoverResult.Outcome))
+                    if ($recoverResult.Errors.Count -gt 0) {
+                        [void]$recoverLines.Add((($recoverResult.Errors | Select-Object -First 5) -join "`r`n"))
+                    }
+                } catch {
+                    [void]$recoverLines.Add(('事务 {0} 恢复失败：{1}' -f $journal.TransactionId, $_.Exception.Message))
+                }
+            }
+            [void][System.Windows.Forms.MessageBox]::Show(($recoverLines -join "`r`n"), '恢复结果',
+                [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            Update-UndoButton
+        }
+    }
     # 启动参数带入路径时直接出一份预览，省掉一次手动点击
     if (-not [string]::IsNullOrWhiteSpace($txtSeqFolder.Text)) {
         try {
@@ -2181,6 +2174,14 @@ $form.Add_Activated({ Update-UndoButton })
 # ---------------------------------------------------------------------------
 if ($Diagnose) {
     try {
+        if ([string]::IsNullOrWhiteSpace($Folder)) {
+            Write-Output 'DIAG_SKIP=FolderMissing'
+            throw '诊断需要有效的 -Folder 目录，未提供目录不能计为通过。'
+        }
+        if (-not (Test-Path -LiteralPath $Folder -PathType Container)) {
+            Write-Output 'DIAG_SKIP=FolderInvalid'
+            throw "诊断目录不存在或不是文件夹：$Folder"
+        }
         if (-not [string]::IsNullOrWhiteSpace($Folder)) {
             $txtSeqFolder.Text = $Folder
             $seqPlan = @(Update-SequencePreview -FolderPath $Folder)
