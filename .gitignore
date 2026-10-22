@@ -4,6 +4,7 @@
 *实施计划.md
 *执行计划.md
 tests/
+tools/
 BatchRenamerLogs/
 BatchRenamerTests_*/
 ComposerSelfTest_*/
