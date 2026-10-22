@@ -1,6 +1,8 @@
 .trae_errors.md
 *.tmp
 *.zip
+*实施计划.md
+*执行计划.md
 BatchRenamerLogs/
 BatchRenamerTests_*/
 ComposerSelfTest_*/
