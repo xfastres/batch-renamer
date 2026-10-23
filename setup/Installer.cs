@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.IO;
 using System.IO.Compression;
@@ -135,6 +135,11 @@ internal static class Program
         shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { workingDirectory });
         shortcutType.InvokeMember("WindowStyle", BindingFlags.SetProperty, null, shortcut, new object[] { 1 });
         shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { "批量重命名工具" });
+        string iconFile = Path.Combine(workingDirectory, "app.ico");
+        if (File.Exists(iconFile))
+        {
+            shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { iconFile + ",0" });
+        }
         shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
     }
 

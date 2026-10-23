@@ -1,7 +1,7 @@
-﻿#define MyAppName "批量重命名工具"
+#define MyAppName "批量重命名工具"
 #define MyAppVersion "1.1.0"
 #define MyAppPublisher "xfastres"
-#define MyAppExeName "启动.vbs"
+#define MyAppExeName "BatchRenamer.exe"
 
 [Setup]
 AppId={{A7C3E5B1-4D2F-4A9E-8C61-9B2E7F4D1A08}
@@ -26,6 +26,8 @@ ShowLanguageDialog=no
 UninstallDisplayName={#MyAppName}
 VersionInfoVersion={#MyAppVersion}
 VersionInfoProductName={#MyAppName}
+SetupIconFile=..\app.ico
+UninstallDisplayIcon={app}\app.ico
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
@@ -74,10 +76,12 @@ Source: "..\启动.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\启动.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\操作说明.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\app.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\BatchRenamer.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Comment: "{#MyAppName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Comment: "{#MyAppName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\app.ico"; Comment: "{#MyAppName}"; AppUserModelID: "xfastres.BatchRenamer"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\app.ico"; Comment: "{#MyAppName}"; AppUserModelID: "xfastres.BatchRenamer"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "立即运行 {#MyAppName}"; Flags: nowait postinstall skipifsilent shellexec

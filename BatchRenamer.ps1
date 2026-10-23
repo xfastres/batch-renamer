@@ -13,6 +13,15 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+$script:AppUserModelId = 'xfastres.BatchRenamer'
+if (-not ('Shell32.AppId' -as [type])) {
+    Add-Type -Namespace Shell32 -Name AppId -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern int SetCurrentProcessExplicitAppUserModelID(string AppID);
+'@
+}
+[void][Shell32.AppId]::SetCurrentProcessExplicitAppUserModelID($script:AppUserModelId)
+
 $script:Plan = @()
 $script:LogFolder = Join-Path $env:TEMP 'BatchRenamerLogs'
 $script:ScriptDir = $PSScriptRoot
@@ -243,7 +252,13 @@ function ConvertTo-PreviewTable {
         $dataRow = $table.NewRow()
         $dataRow['序号'] = $row.Index
         $dataRow['类型'] = $row.Type
-        $dataRow['位置'] = $row.Location
+        if ($row.ParentDir) {
+            $dataRow['位置'] = [string]$row.ParentDir
+        } elseif ($row.SourcePath) {
+            $dataRow['位置'] = [System.IO.Path]::GetDirectoryName([string]$row.SourcePath)
+        } else {
+            $dataRow['位置'] = [string]$row.Location
+        }
         $dataRow['原名称'] = $row.SourceName
         $dataRow['新名称'] = $row.NewName
         $dataRow['状态'] = $row.Status
@@ -284,6 +299,11 @@ function Invoke-SelfTest {
         Write-Output ("TABLE_TYPE={0} ROWS={1}" -f $table.GetType().Name, $table.Rows.Count)
         if ($table -isnot [System.Data.DataTable]) { throw '自测失败：预览表类型不是 DataTable' }
         if ($table.Rows.Count -ne 7) { throw '自测失败：预览表行数不符' }
+        $loc0 = [string]$table.Rows[0]['位置']
+        Write-Output ("TABLE_LOC0={0}" -f $loc0)
+        if ($loc0 -eq '.' -or $loc0 -notlike '*\*') {
+            throw "自测失败：预览位置应显示完整路径，实际为 $loc0"
+        }
 
         # 回归检查：真正绑定到 DataGridView 后必须有数据行，避免出现「预览空白」
         $testGrid = New-Object System.Windows.Forms.DataGridView
@@ -621,6 +641,7 @@ $script:RestoringFixed = $false
 # 固定值控件上一次排布时的容器宽度，窗口尺寸变化后据此判断是否需要重排
 $script:FixedPanelWidth = 0
 $script:ActiveView = 'sequence'
+$script:LayoutPreview = $false
 $script:SeqPlanDirty = $true
 $script:SegmentStale = $true
 
@@ -730,6 +751,8 @@ function Initialize-GridStyle {
     $Grid.AllowUserToAddRows = $false
     $Grid.AllowUserToDeleteRows = $false
     $Grid.AllowUserToResizeRows = $false
+    $Grid.AllowUserToResizeColumns = $true
+    $Grid.ScrollBars = 'Both'
     $Grid.RowHeadersVisible = $false
     $Grid.SelectionMode = 'FullRowSelect'
     $Grid.MultiSelect = $false
@@ -764,14 +787,20 @@ function New-CardPanel {
         [int]$Width,
         [int]$Height,
         [System.Windows.Forms.Control]$Parent,
-        [switch]$FillHeight
+        [switch]$FillHeight,
+        [switch]$DockFill
     )
     $border = New-Object System.Windows.Forms.Panel
-    $border.Location = New-Object System.Drawing.Point($X, $Y)
-    $border.Size = New-Object System.Drawing.Size($Width, $Height)
     $border.BackColor = Get-Color $script:Ui.Line
     $border.Padding = New-Object System.Windows.Forms.Padding(1)
-    $border.Anchor = if ($FillHeight) { 'Top,Bottom,Left,Right' } else { 'Top,Left,Right' }
+    if ($DockFill) {
+        $border.Dock = 'Fill'
+        $border.Anchor = [System.Windows.Forms.AnchorStyles]::None
+    } else {
+        $border.Location = New-Object System.Drawing.Point($X, $Y)
+        $border.Size = New-Object System.Drawing.Size($Width, $Height)
+        $border.Anchor = if ($FillHeight) { 'Top,Bottom,Left,Right' } else { 'Top,Left,Right' }
+    }
 
     $inner = New-Object System.Windows.Forms.Panel
     $inner.Dock = 'Fill'
@@ -787,21 +816,37 @@ function New-CardPanel {
     $titleLabel.AutoSize = $true
     $titleLabel.Font = $fontBold
     $titleLabel.ForeColor = Get-Color $script:Ui.Text
-    $inner.Controls.Add($titleLabel)
 
     $separator = New-Object System.Windows.Forms.Panel
-    $separator.Location = New-Object System.Drawing.Point(0, 42)
-    $separator.Size = New-Object System.Drawing.Size(($Width - 2), 1)
     $separator.BackColor = Get-Color $script:Ui.Line
-    $separator.Anchor = 'Top,Left,Right'
-    $inner.Controls.Add($separator)
 
     $body = New-Object System.Windows.Forms.Panel
-    $body.Location = New-Object System.Drawing.Point(0, 43)
-    $body.Size = New-Object System.Drawing.Size(($Width - 2), ($Height - 45))
     $body.BackColor = [System.Drawing.Color]::White
-    $body.Anchor = 'Top,Bottom,Left,Right'
-    $inner.Controls.Add($body)
+
+    if ($DockFill) {
+        # 标题条 Dock Top，内容区 Dock Fill：拉分割条时表格跟着变，不再钉死启动时的宽高
+        $header = New-Object System.Windows.Forms.Panel
+        $header.Height = 43
+        $header.Dock = 'Top'
+        $header.BackColor = [System.Drawing.Color]::White
+        $header.Controls.Add($titleLabel)
+        $separator.Height = 1
+        $separator.Dock = 'Bottom'
+        $header.Controls.Add($separator)
+        $body.Dock = 'Fill'
+        $inner.Controls.Add($body)
+        $inner.Controls.Add($header)
+    } else {
+        $inner.Controls.Add($titleLabel)
+        $separator.Location = New-Object System.Drawing.Point(0, 42)
+        $separator.Size = New-Object System.Drawing.Size(($Width - 2), 1)
+        $separator.Anchor = 'Top,Left,Right'
+        $inner.Controls.Add($separator)
+        $body.Location = New-Object System.Drawing.Point(0, 43)
+        $body.Size = New-Object System.Drawing.Size(($Width - 2), ($Height - 45))
+        $body.Anchor = 'Top,Bottom,Left,Right'
+        $inner.Controls.Add($body)
+    }
 
     return [pscustomobject]@{
         Border    = $border
@@ -809,6 +854,112 @@ function New-CardPanel {
         Body      = $body
         Title     = $titleLabel
         Separator = $separator
+    }
+}
+
+function Add-PreviewStack {
+    param(
+        [System.Windows.Forms.Control]$Body,
+        [System.Windows.Forms.Control]$StatsBar,
+        [System.Windows.Forms.Control]$Grid,
+        [System.Windows.Forms.Control]$ActionBar
+    )
+    $Body.Controls.Add($StatsBar)
+    $Body.Controls.Add($Grid)
+    $Body.Controls.Add($ActionBar)
+}
+
+function Add-RightActionButtons {
+    param(
+        [System.Windows.Forms.Control]$ActionBar,
+        [System.Windows.Forms.Control]$TopLine,
+        [System.Windows.Forms.Control[]]$Buttons
+    )
+    $TopLine.Location = New-Object System.Drawing.Point(0, 0)
+    $TopLine.Size = New-Object System.Drawing.Size(100, 1)
+    $TopLine.Anchor = 'Top,Left,Right'
+    $ActionBar.Controls.Add($TopLine)
+    foreach ($button in $Buttons) {
+        $button.Location = New-Object System.Drawing.Point(8, 11)
+        $ActionBar.Controls.Add($button)
+    }
+}
+
+function Layout-PreviewCard {
+    # 不用多层 Dock：按宿主当前客户区把卡片、统计条、表格、按钮条写成明确坐标
+    param(
+        [System.Windows.Forms.Control]$HostPanel,
+        [object]$Card,
+        [System.Windows.Forms.Control]$StatsBar,
+        [System.Windows.Forms.Control]$ActionBar,
+        [System.Windows.Forms.Control]$Grid
+    )
+    if (-not $HostPanel -or -not $Card) { return }
+    $cw = $HostPanel.ClientSize.Width
+    $ch = $HostPanel.ClientSize.Height
+    if ($cw -lt 80 -or $ch -lt 80) { return }
+
+    $padL = 8; $padR = 16; $padT = 0; $padB = 16
+    $w = [math]::Max(240, $cw - $padL - $padR)
+    $h = [math]::Max(200, $ch - $padT - $padB)
+
+    $border = $Card.Border
+    $border.Dock = [System.Windows.Forms.DockStyle]::None
+    $border.Anchor = [System.Windows.Forms.AnchorStyles]::None
+    $border.Location = New-Object System.Drawing.Point($padL, $padT)
+    $border.Size = New-Object System.Drawing.Size($w, $h)
+
+    $innerW = [math]::Max(1, $w - 2)
+    $innerH = [math]::Max(1, $h - 2)
+    $Card.Separator.Dock = [System.Windows.Forms.DockStyle]::None
+    $Card.Separator.Anchor = 'Top,Left,Right'
+    $Card.Separator.Location = New-Object System.Drawing.Point(0, 42)
+    $Card.Separator.Size = New-Object System.Drawing.Size($innerW, 1)
+
+    $body = $Card.Body
+    $body.Dock = [System.Windows.Forms.DockStyle]::None
+    $body.Anchor = [System.Windows.Forms.AnchorStyles]::None
+    $bodyH = [math]::Max(90, $innerH - 43)
+    $body.Location = New-Object System.Drawing.Point(0, 43)
+    $body.Size = New-Object System.Drawing.Size($innerW, $bodyH)
+
+    $statsH = 38
+    $actH = 52
+    $gridH = [math]::Max(40, $bodyH - $statsH - $actH)
+    if ($StatsBar) {
+        $StatsBar.Dock = [System.Windows.Forms.DockStyle]::None
+        $StatsBar.Anchor = 'Top,Left,Right'
+        $StatsBar.Location = New-Object System.Drawing.Point(0, 0)
+        $StatsBar.Size = New-Object System.Drawing.Size($innerW, $statsH)
+    }
+    if ($Grid) {
+        $Grid.Dock = [System.Windows.Forms.DockStyle]::None
+        $Grid.Anchor = 'Top,Bottom,Left,Right'
+        $Grid.Location = New-Object System.Drawing.Point(0, $statsH)
+        $Grid.Size = New-Object System.Drawing.Size($innerW, $gridH)
+    }
+    if ($ActionBar) {
+        $ActionBar.Dock = [System.Windows.Forms.DockStyle]::None
+        $ActionBar.Anchor = 'Bottom,Left,Right'
+        $ActionBar.Location = New-Object System.Drawing.Point(0, ($statsH + $gridH))
+        $ActionBar.Size = New-Object System.Drawing.Size($innerW, $actH)
+    }
+}
+
+function Place-RightButtons {
+    param(
+        [System.Windows.Forms.Control]$Bar,
+        [System.Windows.Forms.Control[]]$Buttons
+    )
+    if (-not $Bar -or $Bar.ClientSize.Width -lt 40) { return }
+    $list = @($Buttons)
+    $x = $Bar.ClientSize.Width - 12
+    for ($i = $list.Count - 1; $i -ge 0; $i--) {
+        $btn = $list[$i]
+        $x -= $btn.Width
+        if ($x -lt 8) { $x = 8 }
+        $btn.Location = New-Object System.Drawing.Point($x, 11)
+        $x -= 10
     }
 }
 
@@ -858,6 +1009,11 @@ $form.AutoScaleMode = 'Font'
 $form.StartPosition = 'CenterScreen'
 $form.Font = $font
 $form.BackColor = Get-Color $script:Ui.Canvas
+$form.ShowInTaskbar = $true
+$iconPath = Join-Path $script:ScriptDir 'app.ico'
+if (Test-Path -LiteralPath $iconPath) {
+    $form.Icon = New-Object System.Drawing.Icon($iconPath)
+}
 
 $sidebarWidth = 196
 $sidebar = New-Object System.Windows.Forms.Panel
@@ -1023,6 +1179,44 @@ function Add-PageHeader {
     $Parent.Controls.Add($subtitleLabel)
 }
 
+function Update-PreviewHosts {
+    if ($script:LayoutPreview) { return }
+    $script:LayoutPreview = $true
+    try {
+        if ($seqPreviewHost -and $cardPreview) {
+            Layout-PreviewCard -HostPanel $seqPreviewHost -Card $cardPreview -StatsBar $statsBar -ActionBar $actionBar -Grid $gridSeq
+            Place-RightButtons -Bar $actionBar -Buttons @($btnSeqUndo, $btnSeqPreview, $btnSeqExecute)
+            if ($lblSeqHint -and $statsBar -and $statsBar.ClientSize.Width -gt 0) {
+                $lblSeqHint.Left = [math]::Max(8, $statsBar.ClientSize.Width - $lblSeqHint.Width - 12)
+            }
+        }
+        if ($segPreviewHost -and $cardSegmentGrid) {
+            Layout-PreviewCard -HostPanel $segPreviewHost -Card $cardSegmentGrid -StatsBar $segStatsBar -ActionBar $segActionBar -Grid $gridSeg
+            Place-RightButtons -Bar $segActionBar -Buttons @($btnSegRefresh, $btnSegRun)
+        }
+        if ($gridSeq -and $gridSeq.Columns.Count -ge 6) { Set-SequenceColumnLayout }
+    } finally {
+        $script:LayoutPreview = $false
+    }
+}
+
+function Set-SplitDistance {
+    param(
+        [System.Windows.Forms.SplitContainer]$Split,
+        [int]$Distance
+    )
+    if (-not $Split -or $Split.Width -le 0) { return }
+    if ($Split.Width -gt 700) {
+        if ($Split.Panel1MinSize -lt 360) { $Split.Panel1MinSize = 360 }
+        if ($Split.Panel2MinSize -lt 280) { $Split.Panel2MinSize = 280 }
+    }
+    $max = $Split.Width - $Split.Panel2MinSize - $Split.SplitterWidth
+    if ($max -lt $Split.Panel1MinSize) { return }
+    $value = [math]::Min($Distance, $max)
+    $value = [math]::Max($value, $Split.Panel1MinSize)
+    try { $Split.SplitterDistance = $value } catch { }
+}
+
 function New-SplitWorkArea {
     param(
         [System.Windows.Forms.Control]$Parent,
@@ -1036,19 +1230,30 @@ function New-SplitWorkArea {
     $work.Anchor = 'Top,Bottom,Left,Right'
     $Parent.Controls.Add($work)
 
-    $left = New-Object System.Windows.Forms.Panel
-    $left.Dock = 'Left'
-    $left.Width = $LeftWidth
-    $left.BackColor = Get-Color $script:Ui.Canvas
-    $left.AutoScroll = $true
+    $split = New-Object System.Windows.Forms.SplitContainer
+    $split.Dock = 'Fill'
+    $split.Orientation = 'Vertical'
+    $split.SplitterWidth = 6
+    $split.BackColor = Get-Color $script:Ui.Line
+    $split.Panel1.BackColor = Get-Color $script:Ui.Canvas
+    $split.Panel2.BackColor = Get-Color $script:Ui.Canvas
+    $split.Panel1.AutoScroll = $true
+    $split.Panel2.AutoScroll = $false
+    $work.Controls.Add($split)
+    [void]$work.Handle
+    [void]$split.Handle
+    if ($split.Width -gt 700) {
+        $split.Panel1MinSize = 360
+        $split.Panel2MinSize = 280
+    }
+    Set-SplitDistance -Split $split -Distance $LeftWidth
 
-    $right = New-Object System.Windows.Forms.Panel
-    $right.Dock = 'Fill'
-    $right.BackColor = Get-Color $script:Ui.Canvas
-
-    $work.Controls.Add($right)
-    $work.Controls.Add($left)
-    return [pscustomobject]@{ Work = $work; Left = $left; Right = $right }
+    return [pscustomobject]@{
+        Work  = $work
+        Left  = $split.Panel1
+        Right = $split.Panel2
+        Split = $split
+    }
 }
 
 Add-PageHeader -Title '序号编号' -Subtitle '为文件或文件夹按规则批量添加序号' -Parent $viewSequence
@@ -1307,20 +1512,20 @@ $rbExclude.Size = New-Object System.Drawing.Size(64, 24)
 $rbExclude.BackColor = [System.Drawing.Color]::Transparent
 $scopeBody.Controls.Add($rbExclude)
 
-# 卡片4：预览结果（右侧主栏）
+# 卡片4：预览结果（右侧主栏，尺寸由 Update-PreviewHosts 按宿主客户区计算）
+$seqPreviewHost = New-Object System.Windows.Forms.Panel
+$seqPreviewHost.Dock = 'Fill'
+$seqPreviewHost.BackColor = Get-Color $script:Ui.Canvas
+$seqSplit.Right.Controls.Add($seqPreviewHost)
 $previewCardWidth = [math]::Max(280, $viewContentWidth - $leftColWidth - 24)
 $previewCardHeight = [math]::Max(280, $clientHeight - 66 - 16)
-$cardPreview = New-CardPanel -Title '预览结果' -X 8 -Y 0 -Width $previewCardWidth -Height $previewCardHeight -Parent $seqSplit.Right -FillHeight
+$cardPreview = New-CardPanel -Title '预览结果' -X 8 -Y 0 -Width $previewCardWidth -Height $previewCardHeight -Parent $seqPreviewHost -FillHeight
 $previewBody = $cardPreview.Body
 $previewBodyWidth = $previewCardWidth - 2
 $previewBodyHeight = $previewCardHeight - 45
 
 $statsBar = New-Object System.Windows.Forms.Panel
-$statsBar.Location = New-Object System.Drawing.Point(0, 0)
-$statsBar.Size = New-Object System.Drawing.Size($previewBodyWidth, 38)
 $statsBar.BackColor = Get-Color $script:Ui.NavIdle
-$statsBar.Anchor = 'Top,Left,Right'
-$previewBody.Controls.Add($statsBar)
 
 $statsBarLine = New-Object System.Windows.Forms.Panel
 $statsBarLine.Location = New-Object System.Drawing.Point(0, 37)
@@ -1342,7 +1547,6 @@ $lblSeqHint.Text = '请先预览'
 $lblSeqHint.AutoSize = $true
 $lblSeqHint.Font = $fontSmall
 $lblSeqHint.ForeColor = Get-Color $script:Ui.Primary
-$lblSeqHint.Anchor = 'Top,Right'
 $lblSeqHint.Location = New-Object System.Drawing.Point(($previewBodyWidth - 90), 9)
 $statsBar.Controls.Add($lblSeqHint)
 
@@ -1354,52 +1558,33 @@ Set-StatTag -Label $lblSeqUnchanged -Text '未变化 0' -Kind 'Muted'
 Set-StatTag -Label $lblSeqBlocked -Text '有问题 0' -Kind 'Muted'
 
 $actionBar = New-Object System.Windows.Forms.Panel
-$actionBar.Location = New-Object System.Drawing.Point(0, ($previewBodyHeight - 52))
-$actionBar.Size = New-Object System.Drawing.Size($previewBodyWidth, 52)
 $actionBar.BackColor = Get-Color $script:Ui.NavIdle
-$actionBar.Anchor = 'Bottom,Left,Right'
-$previewBody.Controls.Add($actionBar)
 
 $actionBarLine = New-Object System.Windows.Forms.Panel
-$actionBarLine.Location = New-Object System.Drawing.Point(0, 0)
-$actionBarLine.Size = New-Object System.Drawing.Size($previewBodyWidth, 1)
 $actionBarLine.BackColor = Get-Color $script:Ui.Line
-$actionBarLine.Anchor = 'Top,Left,Right'
-$actionBar.Controls.Add($actionBarLine)
 
 $btnSeqExecute = New-Object System.Windows.Forms.Button
 $btnSeqExecute.Text = '执行重命名'
-$btnSeqExecute.Location = New-Object System.Drawing.Point(($previewBodyWidth - 134), 11)
 $btnSeqExecute.Size = New-Object System.Drawing.Size(120, 30)
-$btnSeqExecute.Anchor = 'Bottom,Right'
-$actionBar.Controls.Add($btnSeqExecute)
-Initialize-ButtonStyle -Button $btnSeqExecute -Kind 'Primary'
 $btnSeqExecute.Enabled = $false
+Initialize-ButtonStyle -Button $btnSeqExecute -Kind 'Primary'
 
 $btnSeqPreview = New-Object System.Windows.Forms.Button
 $btnSeqPreview.Text = '预览'
-$btnSeqPreview.Location = New-Object System.Drawing.Point(($previewBodyWidth - 234), 11)
 $btnSeqPreview.Size = New-Object System.Drawing.Size(90, 30)
-$btnSeqPreview.Anchor = 'Bottom,Right'
-$actionBar.Controls.Add($btnSeqPreview)
 Initialize-ButtonStyle -Button $btnSeqPreview
 
 $btnSeqUndo = New-Object System.Windows.Forms.Button
 $btnSeqUndo.Text = '撤销'
-$btnSeqUndo.Location = New-Object System.Drawing.Point(($previewBodyWidth - 364), 11)
-$btnSeqUndo.Size = New-Object System.Drawing.Size(120, 30)
-$btnSeqUndo.Anchor = 'Bottom,Right'
-$actionBar.Controls.Add($btnSeqUndo)
+$btnSeqUndo.Size = New-Object System.Drawing.Size(140, 30)
 Initialize-ButtonStyle -Button $btnSeqUndo
+Add-RightActionButtons -ActionBar $actionBar -TopLine $actionBarLine -Buttons @($btnSeqUndo, $btnSeqPreview, $btnSeqExecute)
 
 $gridSeq = New-Object System.Windows.Forms.DataGridView
-$gridSeq.Location = New-Object System.Drawing.Point(0, 38)
-$gridSeq.Size = New-Object System.Drawing.Size($previewBodyWidth, ($previewBodyHeight - 38 - 52))
-$gridSeq.Anchor = 'Top,Bottom,Left,Right'
 $gridSeq.ReadOnly = $true
-$gridSeq.AutoSizeColumnsMode = 'Fill'
+$gridSeq.AutoSizeColumnsMode = 'None'
 Initialize-GridStyle -Grid $gridSeq
-$previewBody.Controls.Add($gridSeq)
+Add-PreviewStack -Body $previewBody -StatsBar $statsBar -Grid $gridSeq -ActionBar $actionBar
 
 # ---------------------------------------------------------------------------
 # 视图2：分段拼接
@@ -1486,20 +1671,20 @@ $pnlFixedValues.BackColor = [System.Drawing.Color]::White
 $pnlFixedValues.Anchor = 'Top,Left,Right'
 $cardFixed.Body.Controls.Add($pnlFixedValues)
 
-# 卡片3：预览结果（右侧主栏，内含分段编辑）
+# 卡片3：预览结果（右侧主栏，尺寸由 Update-PreviewHosts 按宿主客户区计算）
+$segPreviewHost = New-Object System.Windows.Forms.Panel
+$segPreviewHost.Dock = 'Fill'
+$segPreviewHost.BackColor = Get-Color $script:Ui.Canvas
+$segSplit.Right.Controls.Add($segPreviewHost)
 $segmentCardWidth = [math]::Max(360, $viewContentWidth - $leftColWidth - 24)
 $segmentCardHeight = [math]::Max(280, $clientHeight - 66 - 16)
-$cardSegmentGrid = New-CardPanel -Title '预览结果' -X 8 -Y 0 -Width $segmentCardWidth -Height $segmentCardHeight -Parent $segSplit.Right -FillHeight
+$cardSegmentGrid = New-CardPanel -Title '预览结果' -X 8 -Y 0 -Width $segmentCardWidth -Height $segmentCardHeight -Parent $segPreviewHost -FillHeight
 $segmentGridBody = $cardSegmentGrid.Body
 $segmentBodyWidth = $segmentCardWidth - 2
 $segmentBodyHeight = $segmentCardHeight - 45
 
 $segStatsBar = New-Object System.Windows.Forms.Panel
-$segStatsBar.Location = New-Object System.Drawing.Point(0, 0)
-$segStatsBar.Size = New-Object System.Drawing.Size($segmentBodyWidth, 38)
 $segStatsBar.BackColor = Get-Color $script:Ui.NavIdle
-$segStatsBar.Anchor = 'Top,Left,Right'
-$segmentGridBody.Controls.Add($segStatsBar)
 
 $segStatsBarLine = New-Object System.Windows.Forms.Panel
 $segStatsBarLine.Location = New-Object System.Drawing.Point(0, 37)
@@ -1524,43 +1709,27 @@ Set-StatTag -Label $lblSegUnchanged -Text '未变化 0' -Kind 'Muted'
 Set-StatTag -Label $lblSegBlocked -Text '有问题 0' -Kind 'Muted'
 
 $segActionBar = New-Object System.Windows.Forms.Panel
-$segActionBar.Location = New-Object System.Drawing.Point(0, ($segmentBodyHeight - 52))
-$segActionBar.Size = New-Object System.Drawing.Size($segmentBodyWidth, 52)
 $segActionBar.BackColor = Get-Color $script:Ui.NavIdle
-$segActionBar.Anchor = 'Bottom,Left,Right'
-$segmentGridBody.Controls.Add($segActionBar)
 
 $segActionBarLine = New-Object System.Windows.Forms.Panel
-$segActionBarLine.Location = New-Object System.Drawing.Point(0, 0)
-$segActionBarLine.Size = New-Object System.Drawing.Size($segmentBodyWidth, 1)
 $segActionBarLine.BackColor = Get-Color $script:Ui.Line
-$segActionBarLine.Anchor = 'Top,Left,Right'
-$segActionBar.Controls.Add($segActionBarLine)
 
 $btnSegRun = New-Object System.Windows.Forms.Button
 $btnSegRun.Text = '执行改名'
-$btnSegRun.Location = New-Object System.Drawing.Point(($segmentBodyWidth - 134), 11)
 $btnSegRun.Size = New-Object System.Drawing.Size(120, 30)
-$btnSegRun.Anchor = 'Bottom,Right'
-$segActionBar.Controls.Add($btnSegRun)
 Initialize-ButtonStyle -Button $btnSegRun -Kind 'Primary'
 
 $btnSegRefresh = New-Object System.Windows.Forms.Button
 $btnSegRefresh.Text = '重新读取'
-$btnSegRefresh.Location = New-Object System.Drawing.Point(($segmentBodyWidth - 244), 11)
 $btnSegRefresh.Size = New-Object System.Drawing.Size(100, 30)
-$btnSegRefresh.Anchor = 'Bottom,Right'
-$segActionBar.Controls.Add($btnSegRefresh)
 Initialize-ButtonStyle -Button $btnSegRefresh
+Add-RightActionButtons -ActionBar $segActionBar -TopLine $segActionBarLine -Buttons @($btnSegRefresh, $btnSegRun)
 
 $gridSeg = New-Object System.Windows.Forms.DataGridView
-$gridSeg.Location = New-Object System.Drawing.Point(0, 38)
-$gridSeg.Size = New-Object System.Drawing.Size($segmentBodyWidth, ($segmentBodyHeight - 38 - 52))
-$gridSeg.Anchor = 'Top,Bottom,Left,Right'
 $gridSeg.EditMode = 'EditOnEnter'
 $gridSeg.AutoSizeColumnsMode = 'None'
 Initialize-GridStyle -Grid $gridSeg
-$segmentGridBody.Controls.Add($gridSeg)
+Add-PreviewStack -Body $segmentGridBody -StatsBar $segStatsBar -Grid $gridSeg -ActionBar $segActionBar
 
 # ---------------------------------------------------------------------------
 # 交互逻辑
@@ -1714,6 +1883,35 @@ function Update-SequenceStats {
     $lblSeqBlocked.Location = New-Object System.Drawing.Point((120 + $lblSeqExec.Width + 10 + $lblSeqUnchanged.Width + 10), 8)
 }
 
+function Set-SequenceColumnLayout {
+    if (-not $gridSeq -or $gridSeq.Columns.Count -lt 6) { return }
+    $gridSeq.AutoSizeColumnsMode = 'None'
+    $tightPad = New-Object System.Windows.Forms.Padding(4, 0, 4, 0)
+    # 序号/类型/状态定宽，避免「文件」「可执行」被挤成省略号；位置/原名称/新名称均分剩余宽度并随面板变宽
+    $fixed = @(
+        @{ Width = 48; Min = 36; Fill = $false; Weight = 0; Pad = $tightPad },
+        @{ Width = 72; Min = 56; Fill = $false; Weight = 0; Pad = $tightPad },
+        @{ Width = 160; Min = 80; Fill = $true; Weight = 46; Pad = $null },
+        @{ Width = 110; Min = 72; Fill = $true; Weight = 27; Pad = $null },
+        @{ Width = 110; Min = 72; Fill = $true; Weight = 27; Pad = $null },
+        @{ Width = 88; Min = 72; Fill = $false; Weight = 0; Pad = $tightPad }
+    )
+    for ($i = 0; $i -lt 6; $i++) {
+        $spec = $fixed[$i]
+        $col = $gridSeq.Columns[$i]
+        $col.MinimumWidth = $spec.Min
+        $col.Resizable = 'True'
+        if ($spec.Fill) {
+            $col.AutoSizeMode = 'Fill'
+            $col.FillWeight = $spec.Weight
+        } else {
+            $col.AutoSizeMode = 'None'
+            $col.Width = $spec.Width
+        }
+        if ($spec.Pad) { $col.DefaultCellStyle.Padding = $spec.Pad }
+    }
+}
+
 function Update-SequencePreview {
     param([string]$FolderPath)
     # 必须先判空：Test-Path -LiteralPath 收到空字符串时参数绑定就抛错
@@ -1737,11 +1935,7 @@ function Update-SequencePreview {
         -ReplaceFrom $replaceFrom -ReplaceTo $txtReplaceNew.Text -CaseSensitive:$chkCase.Checked)
 
     $gridSeq.DataSource = ConvertTo-PreviewTable -Plan $script:Plan
-    # 序号/类型/状态列收窄，把空间让给名称列
-    $weights = @(8, 8, 18, 28, 28, 10)
-    for ($i = 0; $i -lt $gridSeq.Columns.Count -and $i -lt $weights.Count; $i++) {
-        $gridSeq.Columns[$i].FillWeight = $weights[$i]
-    }
+    Set-SequenceColumnLayout
     foreach ($row in $gridSeq.Rows) {
         $status = [string]$row.Cells[5].Value
         if ($script:BlockedStatuses -contains $status) {
@@ -1919,28 +2113,36 @@ function Rebuild-SegmentGrid {
         $nameColumn.DefaultCellStyle.BackColor = Get-Color '#F8F9FB'
         [void]$gridSeg.Columns.Add($nameColumn)
 
-        # 固定列占 200/210/95，剩余宽度按段数均分，段数多时也不出现横向滚动条
+        $nameColumn.MinimumWidth = 120
+        $nameColumn.Resizable = 'True'
+
         $gridWidth = $gridSeg.ClientSize.Width
         if ($gridWidth -le 0) { $gridWidth = $segmentBodyWidth }
-        $segmentWidth = [math]::Max(56, [math]::Floor(($gridWidth - 200 - 210 - 95 - 10) / $script:SegmentCount))
+        $segmentWidth = [math]::Max(72, [math]::Floor(($gridWidth - 200 - 180 - 88 - 10) / $script:SegmentCount))
         for ($segmentIndex = 1; $segmentIndex -le $script:SegmentCount; $segmentIndex++) {
             $segmentColumn = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
             $segmentColumn.HeaderText = "段$segmentIndex"
             $segmentColumn.Width = $segmentWidth
+            $segmentColumn.MinimumWidth = 64
+            $segmentColumn.Resizable = 'True'
             $segmentColumn.DefaultCellStyle.BackColor = Get-Color '#FFFBEB'
             [void]$gridSeg.Columns.Add($segmentColumn)
         }
 
         $newNameColumn = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
         $newNameColumn.HeaderText = '新文件名'
-        $newNameColumn.Width = 210
+        $newNameColumn.Width = 180
+        $newNameColumn.MinimumWidth = 120
+        $newNameColumn.Resizable = 'True'
         $newNameColumn.ReadOnly = $true
         $newNameColumn.DefaultCellStyle.BackColor = Get-Color '#F8F9FB'
         [void]$gridSeg.Columns.Add($newNameColumn)
 
         $statusColumn = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
         $statusColumn.HeaderText = '状态'
-        $statusColumn.Width = 95
+        $statusColumn.Width = 88
+        $statusColumn.MinimumWidth = 80
+        $statusColumn.Resizable = 'True'
         $statusColumn.ReadOnly = $true
         [void]$gridSeg.Columns.Add($statusColumn)
 
@@ -2268,6 +2470,11 @@ $btnSegRun.Add_Click({
 })
 
 $form.Add_Shown({
+    Set-SplitDistance -Split $seqSplit.Split -Distance $leftColWidth
+    Set-SplitDistance -Split $segSplit.Split -Distance $leftColWidth
+    $seqSplit.Split.FixedPanel = 'Panel1'
+    $segSplit.Split.FixedPanel = 'Panel1'
+    Update-PreviewHosts
     Update-ReplaceAvailability
     Update-SequenceSample
     Update-UndoButton
@@ -2312,8 +2519,18 @@ $form.Add_Shown({
 
 # 窗口尺寸变化后按新宽度重排固定值槽位，否则缩窄时最后一段会被裁掉
 $form.Add_Resize({
+    Update-PreviewHosts
     if ($script:FixedChecks.Count -eq 0) { return }
     if ([math]::Abs($pnlFixedValues.ClientSize.Width - $script:FixedPanelWidth) -lt 8) { return }
+    Rebuild-FixedControls -PreserveValues
+})
+
+$seqPreviewHost.Add_SizeChanged({ Update-PreviewHosts })
+$segPreviewHost.Add_SizeChanged({ Update-PreviewHosts })
+$seqSplit.Split.Add_SplitterMoved({ Update-PreviewHosts })
+$segSplit.Split.Add_SplitterMoved({
+    Update-PreviewHosts
+    if ($script:FixedChecks.Count -eq 0) { return }
     Rebuild-FixedControls -PreserveValues
 })
 
@@ -2337,6 +2554,23 @@ if ($Diagnose) {
             $txtSeqFolder.Text = $Folder
             $seqPlan = @(Update-SequencePreview -FolderPath $Folder)
             Write-Output ("DIAG_SEQ_ROWS={0} COLS={1} PLAN={2}" -f $gridSeq.Rows.Count, $gridSeq.Columns.Count, $seqPlan.Count)
+            [void]$form.Handle
+            [void]$seqPreviewHost.Handle
+            Update-PreviewHosts
+            Write-Output ("DIAG_HOST={0}x{1} CARD={2}x{3} GRID={4}x{5}" -f $seqPreviewHost.ClientSize.Width, $seqPreviewHost.ClientSize.Height, $cardPreview.Border.Width, $cardPreview.Border.Height, $gridSeq.Width, $gridSeq.Height)
+            if ($seqPreviewHost.ClientSize.Width -gt 200 -and $cardPreview.Border.Width -lt ($seqPreviewHost.ClientSize.Width - 50)) {
+                throw ("预览卡片未铺满右侧：host={0} card={1}" -f $seqPreviewHost.ClientSize.Width, $cardPreview.Border.Width)
+            }
+            if ($btnSeqPreview.Right -gt ($actionBar.ClientSize.Width + 4) -or $btnSeqPreview.Left -lt 0) {
+                throw ("预览按钮超出按钮条：left={0} right={1} bar={2}" -f $btnSeqPreview.Left, $btnSeqPreview.Right, $actionBar.ClientSize.Width)
+            }
+            if ($gridSeq.Rows.Count -gt 0 -and $gridSeq.Columns.Count -ge 3) {
+                $diagLoc = [string]$gridSeq.Rows[0].Cells[2].Value
+                Write-Output ("DIAG_SEQ_LOC={0}" -f $diagLoc)
+                if ($diagLoc -eq '.' -or $diagLoc -notlike '*\*') {
+                    throw "预览位置应显示完整路径，实际为 $diagLoc"
+                }
+            }
 
             $txtSegFolder.Text = $Folder
             Load-SegmentFiles -FolderPath $Folder

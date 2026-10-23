@@ -34,6 +34,35 @@ function Get-IsccPath {
 }
 
 if (-not (Test-Path -LiteralPath $issPath)) { throw "missing $issPath" }
+$icoPath = Join-Path $root 'app.ico'
+$launcherCs = Join-Path $PSScriptRoot 'Launcher.cs'
+$launcherExe = Join-Path $root 'BatchRenamer.exe'
+$csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if (-not (Test-Path -LiteralPath $csc)) {
+    $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
+}
+if (-not (Test-Path -LiteralPath $csc)) { throw 'csc.exe not found' }
+if (-not (Test-Path -LiteralPath $icoPath)) { throw 'missing app.ico' }
+if (-not (Test-Path -LiteralPath $launcherCs)) { throw 'missing Launcher.cs' }
+
+$refWinForms = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\System.Windows.Forms.dll'
+if (-not (Test-Path -LiteralPath $refWinForms)) {
+    $refWinForms = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\System.Windows.Forms.dll'
+}
+$cscArgs = @(
+    '/nologo',
+    '/target:winexe',
+    '/platform:anycpu',
+    "/win32icon:$icoPath",
+    "/out:$launcherExe",
+    "/reference:$refWinForms",
+    $launcherCs
+)
+$build = Start-Process -FilePath $csc -ArgumentList $cscArgs -Wait -PassThru -NoNewWindow
+if ($build.ExitCode -ne 0) { throw "launcher csc failed, exit $($build.ExitCode)" }
+if (-not (Test-Path -LiteralPath $launcherExe)) { throw 'BatchRenamer.exe not created' }
+Write-Output ("LAUNCHER=" + $launcherExe)
+
 $iscc = Get-IsccPath
 if (-not $iscc) { throw 'ISCC.exe not found. Install Inno Setup 6 first.' }
 
