@@ -27,7 +27,7 @@ $script:FileItems = @()
 $script:FixedChecks = @()
 $script:FixedBoxes = @()
 $script:SegmentCount = 3
-$script:BlockedStatuses = @('有空段', '无效字符', '名称重复', '目标已存在')
+$script:BlockedStatuses = @('无效字符', '名称重复', '目标已存在', '名称为空')
 # 程序内部批量刷新单元格时会触发 CellValueChanged，用该开关阻断递归刷新
 $script:SuppressRefresh = $false
 $script:NaturalComparer = [System.Globalization.CultureInfo]::CurrentCulture.CompareInfo
@@ -114,9 +114,10 @@ function Build-ComposerPlan {
         $newName = Compose-Name -Segments $segments -Separator $Separator -Extension $row.Extension
         $status = '可执行'
 
-        $emptySegment = @($segments | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count
-        if ($emptySegment -gt 0) {
-            $status = '有空段'
+        $hasContent = @($segments | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+        # 空段保留连接符，例如 2 + 空 + 1 => 2--1.docx；只有全部为空才拦
+        if ($hasContent -eq 0 -or [string]::IsNullOrWhiteSpace($newName)) {
+            $status = '名称为空'
         } elseif (-not (Test-NameValid -Name $newName)) {
             $status = '无效字符'
         } elseif ([string]::Equals($row.Name, $newName, [System.StringComparison]::OrdinalIgnoreCase)) {

@@ -25,7 +25,7 @@ public static extern int SetCurrentProcessExplicitAppUserModelID(string AppID);
 $script:Plan = @()
 $script:LogFolder = Join-Path $env:TEMP 'BatchRenamerLogs'
 $script:ScriptDir = $PSScriptRoot
-$script:BlockedStatuses = @('无效字符', '名称重复', '目标已存在', '名称为空', '有空段')
+$script:BlockedStatuses = @('无效字符', '名称重复', '目标已存在', '名称为空')
 $script:CorePath = Join-Path $PSScriptRoot 'BatchRenamer.Core.ps1'
 if (-not (Test-Path -LiteralPath $script:CorePath)) {
     throw '找不到 BatchRenamer.Core.ps1，请与主程序放在同一文件夹。'
@@ -423,10 +423,9 @@ function Build-ComposerPlan {
         $segments = [string[]]$row.Segments
         $newName = Compose-Name -Segments $segments -Separator $Separator -Extension $row.Extension
         $status = '可执行'
-        $emptySegment = @($segments | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count
-        if ($emptySegment -gt 0) {
-            $status = '有空段'
-        } elseif ([string]::IsNullOrWhiteSpace($newName)) {
+        $hasContent = @($segments | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+        # 空段保留连接符，例如 2 + 空 + 1 => 2--1.docx；只有全部为空才拦
+        if ($hasContent -eq 0 -or [string]::IsNullOrWhiteSpace($newName)) {
             $status = '名称为空'
         } elseif (-not (Test-NameValid -Name $newName)) {
             $status = '无效字符'
@@ -455,7 +454,7 @@ function Build-ComposerPlan {
         if ($targetCount.ContainsKey($key)) { $targetCount[$key]++ } else { $targetCount[$key] = 1 }
     }
     foreach ($row in $plan) {
-        if ($script:BlockedStatuses -contains $row.Status -or $row.Status -eq '未变化' -or $row.Status -eq '有空段') { continue }
+        if ($script:BlockedStatuses -contains $row.Status -or $row.Status -eq '未变化') { continue }
         $key = (Get-BatchRenamerPathKey -Path ($row.ParentDir + '|' + $row.NewName))
         if ($targetCount[$key] -gt 1) { $row.Status = '名称重复'; continue }
         $targetPath = Join-Path $row.ParentDir $row.NewName
@@ -552,7 +551,18 @@ function Invoke-ComposerSelfTest {
         Write-Output ("PLAN={0}" -f $plan.Count)
         $plan | ForEach-Object { Write-Output ("  {0} -> {1} | {2}" -f $_.SourceName, $_.NewName, $_.Status) }
 
-        if (@($plan | Where-Object Status -eq '有空段').Count -ne 0) { throw '自测失败：仍有空段' }
+        if (@($plan | Where-Object Status -eq '有空段').Count -ne 0) { throw '自测失败：不应再出现有空段' }
+        $emptyPlan = @(Build-ComposerPlan -Rows @([pscustomobject]@{
+                    SourcePath = (Join-Path $root 'dummy.docx')
+                    ParentDir  = $root
+                    Name       = 'dummy.docx'
+                    Extension  = '.docx'
+                    Segments   = @('2', '', '1')
+                }) -Separator '-')
+        if ($emptyPlan[0].NewName -ne '2--1.docx') { throw "自测失败：空段应拼成 2--1.docx，实际 $($emptyPlan[0].NewName)" }
+        if ($emptyPlan[0].Status -eq '有空段' -or $emptyPlan[0].Status -eq '名称为空') {
+            throw "自测失败：空段不应阻止执行，实际 $($emptyPlan[0].Status)"
+        }
         $firstItem = @($plan | Where-Object SourceName -eq '2025-张三-王五.docx')[0]
         $secondItem = @($plan | Where-Object SourceName -eq '甲X乙.txt')[0]
         if ($firstItem.NewName -ne '2025-张三-李四.docx') { throw "自测失败：拼接结果错误 $($firstItem.NewName)" }
