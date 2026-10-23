@@ -1,4 +1,4 @@
-.trae_errors.md
+﻿.trae_errors.md
 *.tmp
 *.zip
 *实施计划.md
@@ -6,8 +6,11 @@
 *美化专项任务.md
 tests/
 tools/
+文档/
 BatchRenamerLogs/
 BatchRenamerTests_*/
 ComposerSelfTest_*/
 *.csv.done
 *.json.done
+dist/*
+!dist/BatchRenamer-Setup-*.exe
