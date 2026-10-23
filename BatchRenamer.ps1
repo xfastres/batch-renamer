@@ -642,6 +642,9 @@ $script:RestoringFixed = $false
 $script:FixedPanelWidth = 0
 $script:ActiveView = 'sequence'
 $script:LayoutPreview = $false
+$script:SeqColumnsUserSized = $false
+$script:SeqGridLayoutWidth = 0
+$script:ApplyingSeqColumns = $false
 $script:SeqPlanDirty = $true
 $script:SegmentStale = $true
 
@@ -1194,7 +1197,10 @@ function Update-PreviewHosts {
             Layout-PreviewCard -HostPanel $segPreviewHost -Card $cardSegmentGrid -StatsBar $segStatsBar -ActionBar $segActionBar -Grid $gridSeg
             Place-RightButtons -Bar $segActionBar -Buttons @($btnSegRefresh, $btnSegRun)
         }
-        if ($gridSeq -and $gridSeq.Columns.Count -ge 6) { Set-SequenceColumnLayout }
+        # 用户手拖过列宽后，布局刷新不再强行重分配，否则右边列会立刻弹回
+        if ($gridSeq -and $gridSeq.Columns.Count -ge 6) {
+            Set-SequenceColumnLayout
+        }
     } finally {
         $script:LayoutPreview = $false
     }
@@ -1585,6 +1591,10 @@ $gridSeq.ReadOnly = $true
 $gridSeq.AutoSizeColumnsMode = 'None'
 Initialize-GridStyle -Grid $gridSeq
 Add-PreviewStack -Body $previewBody -StatsBar $statsBar -Grid $gridSeq -ActionBar $actionBar
+$gridSeq.Add_ColumnWidthChanged({
+    if ($script:ApplyingSeqColumns) { return }
+    $script:SeqColumnsUserSized = $true
+})
 
 # ---------------------------------------------------------------------------
 # 视图2：分段拼接
@@ -1884,31 +1894,44 @@ function Update-SequenceStats {
 }
 
 function Set-SequenceColumnLayout {
+    param([switch]$Force)
     if (-not $gridSeq -or $gridSeq.Columns.Count -lt 6) { return }
-    $gridSeq.AutoSizeColumnsMode = 'None'
-    $tightPad = New-Object System.Windows.Forms.Padding(4, 0, 4, 0)
-    # 序号/类型/状态定宽，避免「文件」「可执行」被挤成省略号；位置/原名称/新名称均分剩余宽度并随面板变宽
-    $fixed = @(
-        @{ Width = 48; Min = 36; Fill = $false; Weight = 0; Pad = $tightPad },
-        @{ Width = 72; Min = 56; Fill = $false; Weight = 0; Pad = $tightPad },
-        @{ Width = 160; Min = 80; Fill = $true; Weight = 46; Pad = $null },
-        @{ Width = 110; Min = 72; Fill = $true; Weight = 27; Pad = $null },
-        @{ Width = 110; Min = 72; Fill = $true; Weight = 27; Pad = $null },
-        @{ Width = 88; Min = 72; Fill = $false; Weight = 0; Pad = $tightPad }
-    )
-    for ($i = 0; $i -lt 6; $i++) {
-        $spec = $fixed[$i]
-        $col = $gridSeq.Columns[$i]
-        $col.MinimumWidth = $spec.Min
-        $col.Resizable = 'True'
-        if ($spec.Fill) {
-            $col.AutoSizeMode = 'Fill'
-            $col.FillWeight = $spec.Weight
-        } else {
+    $available = $gridSeq.ClientSize.Width
+    if ($available -le 0) { return }
+
+    # Fill 会吞掉用户拖列；全部 None，仅在首次/强制/可用宽度明显变化时重分配
+    if (-not $Force -and $script:SeqColumnsUserSized) { return }
+    if (-not $Force -and $script:SeqGridLayoutWidth -gt 0 -and [math]::Abs($available - $script:SeqGridLayoutWidth) -lt 24) {
+        return
+    }
+
+    $script:ApplyingSeqColumns = $true
+    try {
+        $gridSeq.AutoSizeColumnsMode = 'None'
+        $tightPad = New-Object System.Windows.Forms.Padding(4, 0, 4, 0)
+        $wIndex = 48
+        $wType = 72
+        $wStatus = 88
+        $flex = $available - $wIndex - $wType - $wStatus
+        if ($flex -lt 240) { $flex = 240 }
+        $wLoc = [math]::Max(80, [math]::Floor($flex * 0.42))
+        $wOld = [math]::Max(80, [math]::Floor($flex * 0.29))
+        $wNew = $flex - $wLoc - $wOld
+        if ($wNew -lt 80) { $wNew = 80 }
+        $widths = @($wIndex, $wType, $wLoc, $wOld, $wNew, $wStatus)
+        $mins = @(36, 56, 80, 72, 72, 72)
+        $pads = @($tightPad, $tightPad, $null, $null, $null, $tightPad)
+        for ($i = 0; $i -lt 6; $i++) {
+            $col = $gridSeq.Columns[$i]
             $col.AutoSizeMode = 'None'
-            $col.Width = $spec.Width
+            $col.MinimumWidth = $mins[$i]
+            $col.Resizable = 'True'
+            $col.Width = $widths[$i]
+            if ($pads[$i]) { $col.DefaultCellStyle.Padding = $pads[$i] }
         }
-        if ($spec.Pad) { $col.DefaultCellStyle.Padding = $spec.Pad }
+        $script:SeqGridLayoutWidth = $available
+    } finally {
+        $script:ApplyingSeqColumns = $false
     }
 }
 
@@ -1935,7 +1958,10 @@ function Update-SequencePreview {
         -ReplaceFrom $replaceFrom -ReplaceTo $txtReplaceNew.Text -CaseSensitive:$chkCase.Checked)
 
     $gridSeq.DataSource = ConvertTo-PreviewTable -Plan $script:Plan
-    Set-SequenceColumnLayout
+    # 新预览重新默认分配列宽；用户之后再拖会重新锁定
+    $script:SeqColumnsUserSized = $false
+    $script:SeqGridLayoutWidth = 0
+    Set-SequenceColumnLayout -Force
     foreach ($row in $gridSeq.Rows) {
         $status = [string]$row.Cells[5].Value
         if ($script:BlockedStatuses -contains $status) {
