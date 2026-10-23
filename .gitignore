@@ -3,6 +3,7 @@
 *.zip
 *实施计划.md
 *执行计划.md
+*美化专项任务.md
 tests/
 tools/
 BatchRenamerLogs/

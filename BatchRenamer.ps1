@@ -638,6 +638,24 @@ function Get-Color {
     return [System.Drawing.ColorTranslator]::FromHtml($Html)
 }
 
+$script:Ui = @{
+    Canvas   = '#F5F7FA'
+    Panel    = '#FFFFFF'
+    Text     = '#172033'
+    Muted    = '#64748B'
+    Line     = '#E2E8F0'
+    Primary  = '#2563EB'
+    PrimaryH = '#1D4ED8'
+    NavHover = '#EFF6FF'
+    NavIdle  = '#F8FAFC'
+    Success  = '#059669'
+    SuccessB = '#ECFDF5'
+    Danger   = '#DC2626'
+    DangerB  = '#FEF2F2'
+    Warn     = '#D97706'
+    SampleB  = '#EFF6FF'
+}
+
 # ===== 控件工厂 =====
 
 function Initialize-ButtonStyle {
@@ -651,32 +669,32 @@ function Initialize-ButtonStyle {
     $Button.UseVisualStyleBackColor = $false
     switch ($Kind) {
         'Primary' {
-            $Button.BackColor = Get-Color '#2563EB'
+            $Button.BackColor = Get-Color $script:Ui.Primary
             $Button.ForeColor = [System.Drawing.Color]::White
             $Button.FlatAppearance.BorderSize = 1
-            $Button.FlatAppearance.BorderColor = Get-Color '#2563EB'
-            $Button.FlatAppearance.MouseOverBackColor = Get-Color '#1D4ED8'
+            $Button.FlatAppearance.BorderColor = Get-Color $script:Ui.Primary
+            $Button.FlatAppearance.MouseOverBackColor = Get-Color $script:Ui.PrimaryH
         }
         'Danger' {
             $Button.BackColor = [System.Drawing.Color]::White
-            $Button.ForeColor = Get-Color '#DC2626'
+            $Button.ForeColor = Get-Color $script:Ui.Danger
             $Button.FlatAppearance.BorderSize = 1
             $Button.FlatAppearance.BorderColor = Get-Color '#FECACA'
-            $Button.FlatAppearance.MouseOverBackColor = Get-Color '#FEF2F2'
+            $Button.FlatAppearance.MouseOverBackColor = Get-Color $script:Ui.DangerB
         }
         'Ghost' {
             $Button.BackColor = [System.Drawing.Color]::White
-            $Button.ForeColor = Get-Color '#6B7280'
+            $Button.ForeColor = Get-Color $script:Ui.Muted
             $Button.FlatAppearance.BorderSize = 0
             $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::White
-            $Button.FlatAppearance.MouseOverBackColor = Get-Color '#F3F4F6'
+            $Button.FlatAppearance.MouseOverBackColor = Get-Color $script:Ui.NavHover
         }
         default {
             $Button.BackColor = [System.Drawing.Color]::White
-            $Button.ForeColor = Get-Color '#1A1D23'
+            $Button.ForeColor = Get-Color $script:Ui.Text
             $Button.FlatAppearance.BorderSize = 1
-            $Button.FlatAppearance.BorderColor = Get-Color '#E2E4E9'
-            $Button.FlatAppearance.MouseOverBackColor = Get-Color '#F9FAFB'
+            $Button.FlatAppearance.BorderColor = Get-Color $script:Ui.Line
+            $Button.FlatAppearance.MouseOverBackColor = Get-Color $script:Ui.NavIdle
         }
     }
 }
@@ -693,7 +711,7 @@ function New-FieldLabel {
     $label.Location = New-Object System.Drawing.Point($X, $Y)
     $label.AutoSize = $true
     $label.Font = $fontSmall
-    $label.ForeColor = Get-Color '#6B7280'
+    $label.ForeColor = Get-Color $script:Ui.Muted
     $label.BackColor = [System.Drawing.Color]::Transparent
     $Parent.Controls.Add($label)
 }
@@ -718,19 +736,21 @@ function Initialize-GridStyle {
     $Grid.BackgroundColor = [System.Drawing.Color]::White
     $Grid.BorderStyle = 'None'
     $Grid.CellBorderStyle = 'SingleHorizontal'
-    $Grid.GridColor = Get-Color '#EDF0F4'
+    $Grid.GridColor = Get-Color $script:Ui.Line
     $Grid.RowTemplate.Height = 34
     $Grid.EnableHeadersVisualStyles = $false
     $Grid.ColumnHeadersHeight = 36
     $Grid.ColumnHeadersHeightSizeMode = 'DisableResizing'
-    $Grid.ColumnHeadersDefaultCellStyle.BackColor = Get-Color '#FAFBFC'
-    $Grid.ColumnHeadersDefaultCellStyle.ForeColor = Get-Color '#6B7280'
+    $Grid.ColumnHeadersDefaultCellStyle.BackColor = Get-Color $script:Ui.NavIdle
+    $Grid.ColumnHeadersDefaultCellStyle.ForeColor = Get-Color $script:Ui.Muted
     $Grid.ColumnHeadersDefaultCellStyle.Font = $fontGridHeader
-    $Grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Get-Color '#FAFBFC'
-    $Grid.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::White
+    $Grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Get-Color $script:Ui.NavIdle
+    $Grid.AlternatingRowsDefaultCellStyle.BackColor = Get-Color '#F8FAFC'
     $Grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::White
-    $Grid.DefaultCellStyle.SelectionBackColor = Get-Color '#EFF6FF'
-    $Grid.DefaultCellStyle.SelectionForeColor = Get-Color '#1A1D23'
+    $Grid.DefaultCellStyle.SelectionBackColor = Get-Color $script:Ui.NavHover
+    $Grid.DefaultCellStyle.SelectionForeColor = Get-Color $script:Ui.Text
+    $Grid.ShowCellToolTips = $true
+    $Grid.DefaultCellStyle.WrapMode = 'False'
     $Grid.DefaultCellStyle.Padding = New-Object System.Windows.Forms.Padding(10, 0, 10, 0)
     $Grid.DefaultCellStyle.Font = $font
 }
@@ -749,7 +769,7 @@ function New-CardPanel {
     $border = New-Object System.Windows.Forms.Panel
     $border.Location = New-Object System.Drawing.Point($X, $Y)
     $border.Size = New-Object System.Drawing.Size($Width, $Height)
-    $border.BackColor = Get-Color '#E2E4E9'
+    $border.BackColor = Get-Color $script:Ui.Line
     $border.Padding = New-Object System.Windows.Forms.Padding(1)
     $border.Anchor = if ($FillHeight) { 'Top,Bottom,Left,Right' } else { 'Top,Left,Right' }
 
@@ -766,13 +786,13 @@ function New-CardPanel {
     $titleLabel.Location = New-Object System.Drawing.Point(18, 13)
     $titleLabel.AutoSize = $true
     $titleLabel.Font = $fontBold
-    $titleLabel.ForeColor = Get-Color '#1A1D23'
+    $titleLabel.ForeColor = Get-Color $script:Ui.Text
     $inner.Controls.Add($titleLabel)
 
     $separator = New-Object System.Windows.Forms.Panel
     $separator.Location = New-Object System.Drawing.Point(0, 42)
     $separator.Size = New-Object System.Drawing.Size(($Width - 2), 1)
-    $separator.BackColor = Get-Color '#E2E4E9'
+    $separator.BackColor = Get-Color $script:Ui.Line
     $separator.Anchor = 'Top,Left,Right'
     $inner.Controls.Add($separator)
 
@@ -800,9 +820,9 @@ function Set-StatTag {
     )
     $Label.Text = $Text
     switch ($Kind) {
-        'Success' { $Label.BackColor = Get-Color '#ECFDF5'; $Label.ForeColor = Get-Color '#059669' }
-        'Danger'  { $Label.BackColor = Get-Color '#FEF2F2'; $Label.ForeColor = Get-Color '#DC2626' }
-        default   { $Label.BackColor = Get-Color '#F3F4F6'; $Label.ForeColor = Get-Color '#6B7280' }
+        'Success' { $Label.BackColor = Get-Color $script:Ui.SuccessB; $Label.ForeColor = Get-Color $script:Ui.Success }
+        'Danger'  { $Label.BackColor = Get-Color $script:Ui.DangerB; $Label.ForeColor = Get-Color $script:Ui.Danger }
+        default   { $Label.BackColor = Get-Color '#F1F5F9'; $Label.ForeColor = Get-Color $script:Ui.Muted }
     }
     $measured = [System.Windows.Forms.TextRenderer]::MeasureText($Text, $Label.Font)
     $Label.Width = $measured.Width + 20
@@ -815,8 +835,8 @@ function New-StatTag {
     $label.Size = New-Object System.Drawing.Size(80, 22)
     $label.TextAlign = 'MiddleCenter'
     $label.Font = $fontSmall
-    $label.BackColor = Get-Color '#F3F4F6'
-    $label.ForeColor = Get-Color '#6B7280'
+    $label.BackColor = Get-Color '#F1F5F9'
+    $label.ForeColor = Get-Color $script:Ui.Muted
     $Parent.Controls.Add($label)
     return $label
 }
@@ -837,20 +857,27 @@ $form.MinimumSize = New-Object System.Drawing.Size($minWidth, $minHeight)
 $form.AutoScaleMode = 'Font'
 $form.StartPosition = 'CenterScreen'
 $form.Font = $font
-$form.BackColor = Get-Color '#F4F5F7'
+$form.BackColor = Get-Color $script:Ui.Canvas
 
-$sidebarWidth = 220
+$sidebarWidth = 196
 $sidebar = New-Object System.Windows.Forms.Panel
 $sidebar.Location = New-Object System.Drawing.Point(0, 0)
 $sidebar.Size = New-Object System.Drawing.Size($sidebarWidth, $clientHeight)
-$sidebar.BackColor = Get-Color '#111827'
+$sidebar.BackColor = Get-Color $script:Ui.Canvas
 $sidebar.Anchor = 'Top,Bottom,Left'
 $form.Controls.Add($sidebar)
+
+$sidebarEdge = New-Object System.Windows.Forms.Panel
+$sidebarEdge.Location = New-Object System.Drawing.Point(($sidebarWidth - 1), 0)
+$sidebarEdge.Size = New-Object System.Drawing.Size(1, $clientHeight)
+$sidebarEdge.BackColor = Get-Color $script:Ui.Line
+$sidebarEdge.Anchor = 'Top,Bottom,Right'
+$sidebar.Controls.Add($sidebarEdge)
 
 $logoBox = New-Object System.Windows.Forms.Panel
 $logoBox.Location = New-Object System.Drawing.Point(16, 20)
 $logoBox.Size = New-Object System.Drawing.Size(22, 22)
-$logoBox.BackColor = Get-Color '#2563EB'
+$logoBox.BackColor = Get-Color $script:Ui.Primary
 $sidebar.Controls.Add($logoBox)
 
 $logoMark = New-Object System.Windows.Forms.Label
@@ -866,59 +893,85 @@ $logoText.Text = '批量重命名'
 $logoText.Location = New-Object System.Drawing.Point(46, 21)
 $logoText.AutoSize = $true
 $logoText.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 11, [System.Drawing.FontStyle]::Bold)
-$logoText.ForeColor = [System.Drawing.Color]::White
+$logoText.ForeColor = Get-Color $script:Ui.Text
 $sidebar.Controls.Add($logoText)
 
 $sidebarTopBorder = New-Object System.Windows.Forms.Panel
 $sidebarTopBorder.Location = New-Object System.Drawing.Point(0, 62)
 $sidebarTopBorder.Size = New-Object System.Drawing.Size($sidebarWidth, 1)
-$sidebarTopBorder.BackColor = Get-Color '#1F2937'
+$sidebarTopBorder.BackColor = Get-Color $script:Ui.Line
 $sidebarTopBorder.Anchor = 'Top,Left,Right'
 $sidebar.Controls.Add($sidebarTopBorder)
 
 $navLabel = New-Object System.Windows.Forms.Label
 $navLabel.Text = '命名模式'
-$navLabel.Location = New-Object System.Drawing.Point(16, 82)
+$navLabel.Location = New-Object System.Drawing.Point(16, 78)
 $navLabel.AutoSize = $true
 $navLabel.Font = $fontSmall
-$navLabel.ForeColor = Get-Color '#4B5563'
+$navLabel.ForeColor = Get-Color $script:Ui.Muted
 $sidebar.Controls.Add($navLabel)
+
+function Set-NavButtonState {
+    param(
+        [System.Windows.Forms.Button]$Button,
+        [string]$ViewName
+    )
+    $canvas = Get-Color $script:Ui.Canvas
+    if ($script:ActiveView -eq $ViewName) {
+        $Button.BackColor = Get-Color $script:Ui.Primary
+        $Button.ForeColor = [System.Drawing.Color]::White
+        $Button.FlatAppearance.MouseOverBackColor = Get-Color $script:Ui.Primary
+        $Button.FlatAppearance.MouseDownBackColor = Get-Color $script:Ui.Primary
+        $Button.FlatAppearance.BorderColor = Get-Color $script:Ui.Primary
+    } else {
+        $Button.BackColor = $canvas
+        $Button.ForeColor = Get-Color $script:Ui.Muted
+        $Button.FlatAppearance.MouseOverBackColor = Get-Color $script:Ui.NavHover
+        $Button.FlatAppearance.MouseDownBackColor = Get-Color $script:Ui.NavHover
+        $Button.FlatAppearance.BorderColor = $canvas
+    }
+}
 
 function New-NavButton {
     param([string]$Text, [int]$Y, [string]$ViewName)
+    $canvas = Get-Color $script:Ui.Canvas
     $button = New-Object System.Windows.Forms.Button
     $button.Text = "  $Text"
-    $button.Location = New-Object System.Drawing.Point(8, $Y)
-    $button.Size = New-Object System.Drawing.Size(($sidebarWidth - 16), 40)
+    $button.Location = New-Object System.Drawing.Point(10, $Y)
+    $button.Size = New-Object System.Drawing.Size(($sidebarWidth - 22), 40)
     $button.TextAlign = 'MiddleLeft'
     $button.FlatStyle = 'Flat'
     $button.FlatAppearance.BorderSize = 0
-    $button.FlatAppearance.MouseOverBackColor = Get-Color '#1F2937'
-    $button.FlatAppearance.MouseDownBackColor = Get-Color '#1F2937'
-    $button.BackColor = Get-Color '#111827'
-    $button.ForeColor = Get-Color '#9CA3AF'
+    $button.FlatAppearance.MouseOverBackColor = Get-Color $script:Ui.NavHover
+    $button.FlatAppearance.MouseDownBackColor = Get-Color $script:Ui.NavHover
+    $button.FlatAppearance.BorderColor = $canvas
+    $button.BackColor = $canvas
+    $button.ForeColor = Get-Color $script:Ui.Muted
     $button.Font = $fontNav
     $button.Cursor = [System.Windows.Forms.Cursors]::Hand
     $button.UseVisualStyleBackColor = $false
+    $button.TabStop = $false
     $button.Tag = $ViewName
     $button.Add_Click({ Show-View ([string]$this.Tag) })
     $button.Add_MouseEnter({
-        if ($script:ActiveView -ne [string]$this.Tag) { $this.BackColor = Get-Color '#1F2937' }
+        if ($script:ActiveView -ne [string]$this.Tag) { $this.BackColor = Get-Color $script:Ui.NavHover }
     })
-    $button.Add_MouseLeave({ Show-View $script:ActiveView })
+    $button.Add_MouseLeave({
+        Set-NavButtonState -Button $this -ViewName ([string]$this.Tag)
+    })
     $sidebar.Controls.Add($button)
     return $button
 }
 
-$btnNavSequence = New-NavButton -Text '序号编号' -Y 106 -ViewName 'sequence'
-$btnNavSegment = New-NavButton -Text '分段拼接' -Y 148 -ViewName 'segment'
+$btnNavSequence = New-NavButton -Text '序号编号' -Y 102 -ViewName 'sequence'
+$btnNavSegment = New-NavButton -Text '分段拼接' -Y 146 -ViewName 'segment'
 
 $sidebarFooter = New-Object System.Windows.Forms.Label
-$sidebarFooter.Text = 'v1.1 · 本地工具'
-$sidebarFooter.Location = New-Object System.Drawing.Point(16, ($clientHeight - 34))
+$sidebarFooter.Text = "批量重命名工具  v1.1.0`n让文件管理更简单"
+$sidebarFooter.Location = New-Object System.Drawing.Point(16, ($clientHeight - 48))
 $sidebarFooter.AutoSize = $true
 $sidebarFooter.Font = $fontSmall
-$sidebarFooter.ForeColor = Get-Color '#4B5563'
+$sidebarFooter.ForeColor = Get-Color $script:Ui.Muted
 $sidebarFooter.Anchor = 'Bottom,Left'
 $sidebar.Controls.Add($sidebarFooter)
 
@@ -926,57 +979,95 @@ $sidebar.Controls.Add($sidebarFooter)
 $contentHost = New-Object System.Windows.Forms.Panel
 $contentHost.Location = New-Object System.Drawing.Point($sidebarWidth, 0)
 $contentHost.Size = New-Object System.Drawing.Size(($clientWidth - $sidebarWidth), $clientHeight)
-$contentHost.BackColor = Get-Color '#F4F5F7'
+$contentHost.BackColor = Get-Color $script:Ui.Canvas
 $contentHost.Anchor = 'Top,Bottom,Left,Right'
 $form.Controls.Add($contentHost)
-
-$cardWidth = $clientWidth - $sidebarWidth - 48
 
 $viewSequence = New-Object System.Windows.Forms.Panel
 $viewSequence.Location = New-Object System.Drawing.Point(0, 0)
 $viewSequence.Size = New-Object System.Drawing.Size(($clientWidth - $sidebarWidth), $clientHeight)
-$viewSequence.BackColor = Get-Color '#F4F5F7'
+$viewSequence.BackColor = Get-Color $script:Ui.Canvas
 $viewSequence.Anchor = 'Top,Bottom,Left,Right'
 $contentHost.Controls.Add($viewSequence)
 
 $viewSegment = New-Object System.Windows.Forms.Panel
 $viewSegment.Location = New-Object System.Drawing.Point(0, 0)
 $viewSegment.Size = New-Object System.Drawing.Size(($clientWidth - $sidebarWidth), $clientHeight)
-$viewSegment.BackColor = Get-Color '#F4F5F7'
+$viewSegment.BackColor = Get-Color $script:Ui.Canvas
 $viewSegment.Anchor = 'Top,Bottom,Left,Right'
 $viewSegment.Visible = $false
 $contentHost.Controls.Add($viewSegment)
+
+$script:PathTip = New-Object System.Windows.Forms.ToolTip
+$script:PathTip.AutoPopDelay = 10000
+$script:PathTip.InitialDelay = 400
+$script:PathTip.ReshowDelay = 100
 
 # ----- 视图标题 -----
 function Add-PageHeader {
     param([string]$Title, [string]$Subtitle, [System.Windows.Forms.Control]$Parent)
     $titleLabel = New-Object System.Windows.Forms.Label
     $titleLabel.Text = $Title
-    $titleLabel.Location = New-Object System.Drawing.Point(24, 14)
+    $titleLabel.Location = New-Object System.Drawing.Point(20, 12)
     $titleLabel.AutoSize = $true
     $titleLabel.Font = $fontTitle
-    $titleLabel.ForeColor = Get-Color '#1A1D23'
+    $titleLabel.ForeColor = Get-Color $script:Ui.Text
     $Parent.Controls.Add($titleLabel)
 
     $subtitleLabel = New-Object System.Windows.Forms.Label
     $subtitleLabel.Text = $Subtitle
-    $subtitleLabel.Location = New-Object System.Drawing.Point(24, 44)
+    $subtitleLabel.Location = New-Object System.Drawing.Point(20, 40)
     $subtitleLabel.AutoSize = $true
     $subtitleLabel.Font = $fontSubtitle
-    $subtitleLabel.ForeColor = Get-Color '#6B7280'
+    $subtitleLabel.ForeColor = Get-Color $script:Ui.Muted
     $Parent.Controls.Add($subtitleLabel)
 }
 
-Add-PageHeader -Title '序号编号' -Subtitle '按前缀、起始序号和位数批量生成新文件名' -Parent $viewSequence
-Add-PageHeader -Title '分段拼接改名' -Subtitle '按连接符拆分文件名，逐段编辑后重新拼接' -Parent $viewSegment
+function New-SplitWorkArea {
+    param(
+        [System.Windows.Forms.Control]$Parent,
+        [int]$LeftWidth
+    )
+    $headerH = 66
+    $work = New-Object System.Windows.Forms.Panel
+    $work.Location = New-Object System.Drawing.Point(0, $headerH)
+    $work.Size = New-Object System.Drawing.Size($Parent.ClientSize.Width, ($Parent.ClientSize.Height - $headerH))
+    $work.BackColor = Get-Color $script:Ui.Canvas
+    $work.Anchor = 'Top,Bottom,Left,Right'
+    $Parent.Controls.Add($work)
+
+    $left = New-Object System.Windows.Forms.Panel
+    $left.Dock = 'Left'
+    $left.Width = $LeftWidth
+    $left.BackColor = Get-Color $script:Ui.Canvas
+    $left.AutoScroll = $true
+
+    $right = New-Object System.Windows.Forms.Panel
+    $right.Dock = 'Fill'
+    $right.BackColor = Get-Color $script:Ui.Canvas
+
+    $work.Controls.Add($right)
+    $work.Controls.Add($left)
+    return [pscustomobject]@{ Work = $work; Left = $left; Right = $right }
+}
+
+Add-PageHeader -Title '序号编号' -Subtitle '为文件或文件夹按规则批量添加序号' -Parent $viewSequence
+Add-PageHeader -Title '分段拼接' -Subtitle '按规则将文件名分段，重新组合' -Parent $viewSegment
+
+$viewContentWidth = $clientWidth - $sidebarWidth
+$leftColWidth = 508
+$seqSplit = New-SplitWorkArea -Parent $viewSequence -LeftWidth $leftColWidth
+$segSplit = New-SplitWorkArea -Parent $viewSegment -LeftWidth $leftColWidth
+$leftCardWidth = $leftColWidth - 32
+$cardWidth = $leftCardWidth
 
 # ---------------------------------------------------------------------------
 # 视图1：序号编号
 # ---------------------------------------------------------------------------
 
-# 卡片1：目标文件夹
-$cardFolderSeq = New-CardPanel -Title '目标文件夹' -X 24 -Y 76 -Width $cardWidth -Height 84 -Parent $viewSequence
-$seqBodyWidth = $cardWidth - 2
+# 卡片1：选择目录
+$cardFolderSeq = New-CardPanel -Title '1. 选择目录' -X 16 -Y 8 -Width $leftCardWidth -Height 96 -Parent $seqSplit.Left
+$seqBodyWidth = $leftCardWidth - 2
 
 $txtSeqFolder = New-Object System.Windows.Forms.TextBox
 $txtSeqFolder.Location = New-Object System.Drawing.Point(14, 8)
@@ -994,14 +1085,15 @@ $cardFolderSeq.Body.Controls.Add($btnSeqBrowse)
 Initialize-ButtonStyle -Button $btnSeqBrowse
 
 # 卡片2：命名规则
-$cardRule = New-CardPanel -Title '命名规则' -X 24 -Y 172 -Width $cardWidth -Height 196 -Parent $viewSequence
+$cardRule = New-CardPanel -Title '2. 命名规则' -X 16 -Y 116 -Width $leftCardWidth -Height 318 -Parent $seqSplit.Left
 $ruleBody = $cardRule.Body
 
 New-FieldLabel -Text '模式' -X 14 -Y 2 -Parent $ruleBody
 $cmbNameMode = New-Object System.Windows.Forms.ComboBox
 $cmbNameMode.DropDownStyle = 'DropDownList'
 $cmbNameMode.Location = New-Object System.Drawing.Point(14, 22)
-$cmbNameMode.Size = New-Object System.Drawing.Size(210, 26)
+$cmbNameMode.Size = New-Object System.Drawing.Size(($seqBodyWidth - 28), 26)
+$cmbNameMode.Anchor = 'Top,Left,Right'
 [void]$cmbNameMode.Items.Add('序号命名（前缀+序号+后缀）')
 [void]$cmbNameMode.Items.Add('仅加前缀（保留原名）')
 [void]$cmbNameMode.Items.Add('仅加后缀（保留原名）')
@@ -1010,24 +1102,24 @@ $cmbNameMode.SelectedIndex = 0
 $cmbNameMode.Font = $fontInput
 $ruleBody.Controls.Add($cmbNameMode)
 
-New-FieldLabel -Text '前缀' -X 238 -Y 2 -Parent $ruleBody
+New-FieldLabel -Text '前缀' -X 14 -Y 54 -Parent $ruleBody
 $txtPrefix = New-Object System.Windows.Forms.TextBox
 $txtPrefix.Text = '文件_'
-$txtPrefix.Location = New-Object System.Drawing.Point(238, 22)
-$txtPrefix.Size = New-Object System.Drawing.Size(110, 26)
+$txtPrefix.Location = New-Object System.Drawing.Point(14, 74)
+$txtPrefix.Size = New-Object System.Drawing.Size(140, 26)
 Initialize-Input -Control $txtPrefix
 $ruleBody.Controls.Add($txtPrefix)
 
-New-FieldLabel -Text '后缀' -X 362 -Y 2 -Parent $ruleBody
+New-FieldLabel -Text '后缀' -X 168 -Y 54 -Parent $ruleBody
 $txtSuffix = New-Object System.Windows.Forms.TextBox
-$txtSuffix.Location = New-Object System.Drawing.Point(362, 22)
-$txtSuffix.Size = New-Object System.Drawing.Size(110, 26)
+$txtSuffix.Location = New-Object System.Drawing.Point(168, 74)
+$txtSuffix.Size = New-Object System.Drawing.Size(140, 26)
 Initialize-Input -Control $txtSuffix
 $ruleBody.Controls.Add($txtSuffix)
 
-New-FieldLabel -Text '起始序号' -X 486 -Y 2 -Parent $ruleBody
+New-FieldLabel -Text '起始序号' -X 322 -Y 54 -Parent $ruleBody
 $numStart = New-Object System.Windows.Forms.NumericUpDown
-$numStart.Location = New-Object System.Drawing.Point(486, 22)
+$numStart.Location = New-Object System.Drawing.Point(322, 74)
 $numStart.Size = New-Object System.Drawing.Size(70, 26)
 $numStart.Minimum = 0
 $numStart.Maximum = 999999
@@ -1035,9 +1127,9 @@ $numStart.Value = 1
 $numStart.Font = $fontInput
 $ruleBody.Controls.Add($numStart)
 
-New-FieldLabel -Text '位数' -X 570 -Y 2 -Parent $ruleBody
+New-FieldLabel -Text '位数' -X 402 -Y 54 -Parent $ruleBody
 $numDigits = New-Object System.Windows.Forms.NumericUpDown
-$numDigits.Location = New-Object System.Drawing.Point(570, 22)
+$numDigits.Location = New-Object System.Drawing.Point(402, 74)
 $numDigits.Size = New-Object System.Drawing.Size(56, 26)
 $numDigits.Minimum = 1
 $numDigits.Maximum = 10
@@ -1045,11 +1137,11 @@ $numDigits.Value = 3
 $numDigits.Font = $fontInput
 $ruleBody.Controls.Add($numDigits)
 
-New-FieldLabel -Text '排序方式' -X 640 -Y 2 -Parent $ruleBody
+New-FieldLabel -Text '排序方式' -X 14 -Y 106 -Parent $ruleBody
 $cmbSort = New-Object System.Windows.Forms.ComboBox
 $cmbSort.DropDownStyle = 'DropDownList'
-$cmbSort.Location = New-Object System.Drawing.Point(640, 22)
-$cmbSort.Size = New-Object System.Drawing.Size(160, 26)
+$cmbSort.Location = New-Object System.Drawing.Point(14, 126)
+$cmbSort.Size = New-Object System.Drawing.Size(210, 26)
 [void]$cmbSort.Items.Add('名称（自然序）')
 [void]$cmbSort.Items.Add('修改时间')
 [void]$cmbSort.Items.Add('创建时间')
@@ -1062,93 +1154,93 @@ $ruleBody.Controls.Add($cmbSort)
 # 查找替换行：标签宽度固定，说明文字单独放在最右侧并裁切，避免长文本压住复选框
 $lblReplaceTitle = New-Object System.Windows.Forms.Label
 $lblReplaceTitle.Text = '查找替换'
-$lblReplaceTitle.Location = New-Object System.Drawing.Point(14, 56)
+$lblReplaceTitle.Location = New-Object System.Drawing.Point(14, 160)
 $lblReplaceTitle.AutoSize = $false
 $lblReplaceTitle.Size = New-Object System.Drawing.Size(56, 20)
 $lblReplaceTitle.Font = $fontSmall
-$lblReplaceTitle.ForeColor = Get-Color '#6B7280'
+$lblReplaceTitle.ForeColor = Get-Color $script:Ui.Muted
 $ruleBody.Controls.Add($lblReplaceTitle)
 
 $chkReplace = New-Object System.Windows.Forms.CheckBox
 $chkReplace.Text = '启用'
-$chkReplace.Location = New-Object System.Drawing.Point(74, 53)
+$chkReplace.Location = New-Object System.Drawing.Point(74, 157)
 $chkReplace.Size = New-Object System.Drawing.Size(56, 24)
 $chkReplace.BackColor = [System.Drawing.Color]::Transparent
 $ruleBody.Controls.Add($chkReplace)
 
 $lblFind = New-Object System.Windows.Forms.Label
 $lblFind.Text = '查找'
-$lblFind.Location = New-Object System.Drawing.Point(138, 56)
+$lblFind.Location = New-Object System.Drawing.Point(138, 160)
 $lblFind.AutoSize = $true
-$lblFind.ForeColor = Get-Color '#6B7280'
+$lblFind.ForeColor = Get-Color $script:Ui.Muted
 $lblFind.BackColor = [System.Drawing.Color]::Transparent
 $ruleBody.Controls.Add($lblFind)
 
 $txtFind = New-Object System.Windows.Forms.TextBox
-$txtFind.Location = New-Object System.Drawing.Point(172, 52)
-$txtFind.Size = New-Object System.Drawing.Size(150, 26)
+$txtFind.Location = New-Object System.Drawing.Point(172, 156)
+$txtFind.Size = New-Object System.Drawing.Size(100, 26)
 Initialize-Input -Control $txtFind
 $ruleBody.Controls.Add($txtFind)
 
 $lblArrow = New-Object System.Windows.Forms.Label
 $lblArrow.Text = '→'
-$lblArrow.Location = New-Object System.Drawing.Point(330, 56)
+$lblArrow.Location = New-Object System.Drawing.Point(276, 160)
 $lblArrow.AutoSize = $true
-$lblArrow.ForeColor = Get-Color '#9CA3AF'
+$lblArrow.ForeColor = Get-Color $script:Ui.Muted
 $lblArrow.BackColor = [System.Drawing.Color]::Transparent
 $ruleBody.Controls.Add($lblArrow)
 
 $lblReplaceTo = New-Object System.Windows.Forms.Label
 $lblReplaceTo.Text = '替换为'
-$lblReplaceTo.Location = New-Object System.Drawing.Point(356, 56)
+$lblReplaceTo.Location = New-Object System.Drawing.Point(296, 160)
 $lblReplaceTo.AutoSize = $true
-$lblReplaceTo.ForeColor = Get-Color '#6B7280'
+$lblReplaceTo.ForeColor = Get-Color $script:Ui.Muted
 $lblReplaceTo.BackColor = [System.Drawing.Color]::Transparent
 $ruleBody.Controls.Add($lblReplaceTo)
 
 $txtReplaceNew = New-Object System.Windows.Forms.TextBox
-$txtReplaceNew.Location = New-Object System.Drawing.Point(406, 52)
-$txtReplaceNew.Size = New-Object System.Drawing.Size(160, 26)
+$txtReplaceNew.Location = New-Object System.Drawing.Point(350, 156)
+$txtReplaceNew.Size = New-Object System.Drawing.Size(110, 26)
 Initialize-Input -Control $txtReplaceNew
 $ruleBody.Controls.Add($txtReplaceNew)
 
 $chkCase = New-Object System.Windows.Forms.CheckBox
 $chkCase.Text = '区分大小写'
-$chkCase.Location = New-Object System.Drawing.Point(578, 53)
+$chkCase.Location = New-Object System.Drawing.Point(14, 188)
 $chkCase.Size = New-Object System.Drawing.Size(100, 24)
 $chkCase.BackColor = [System.Drawing.Color]::Transparent
 $ruleBody.Controls.Add($chkCase)
 
 $lblReplaceHint = New-Object System.Windows.Forms.Label
 $lblReplaceHint.Text = '作用于原名称，不含扩展名'
-$lblReplaceHint.Location = New-Object System.Drawing.Point(690, 58)
-$lblReplaceHint.Size = New-Object System.Drawing.Size(($seqBodyWidth - 704), 18)
+$lblReplaceHint.Location = New-Object System.Drawing.Point(120, 192)
+$lblReplaceHint.Size = New-Object System.Drawing.Size(($seqBodyWidth - 134), 18)
 $lblReplaceHint.Anchor = 'Top,Left,Right'
 $lblReplaceHint.AutoSize = $false
 $lblReplaceHint.AutoEllipsis = $true
 $lblReplaceHint.Font = $fontSmall
-$lblReplaceHint.ForeColor = Get-Color '#9CA3AF'
+$lblReplaceHint.ForeColor = Get-Color $script:Ui.Muted
 $lblReplaceHint.BackColor = [System.Drawing.Color]::Transparent
 $ruleBody.Controls.Add($lblReplaceHint)
 
 $lblSample = New-Object System.Windows.Forms.Label
-$lblSample.Location = New-Object System.Drawing.Point(14, 100)
+$lblSample.Location = New-Object System.Drawing.Point(14, 222)
 $lblSample.Size = New-Object System.Drawing.Size(($seqBodyWidth - 28), 34)
 $lblSample.Anchor = 'Top,Left,Right'
-$lblSample.BackColor = Get-Color '#EFF6FF'
-$lblSample.ForeColor = Get-Color '#2563EB'
+$lblSample.BackColor = Get-Color $script:Ui.SampleB
+$lblSample.ForeColor = Get-Color $script:Ui.Primary
 $lblSample.Font = $font
 $lblSample.TextAlign = 'MiddleLeft'
 $lblSample.Padding = New-Object System.Windows.Forms.Padding(10, 0, 10, 0)
 $ruleBody.Controls.Add($lblSample)
 
-# 卡片3：过滤与范围
-$cardScope = New-CardPanel -Title '过滤与范围' -X 24 -Y 380 -Width $cardWidth -Height 104 -Parent $viewSequence
+# 卡片3：筛选设置
+$cardScope = New-CardPanel -Title '3. 筛选设置' -X 16 -Y 446 -Width $leftCardWidth -Height 164 -Parent $seqSplit.Left
 $scopeBody = $cardScope.Body
 
 $rbFiles = New-Object System.Windows.Forms.RadioButton
 $rbFiles.Text = '文件'
-$rbFiles.Location = New-Object System.Drawing.Point(14, 18)
+$rbFiles.Location = New-Object System.Drawing.Point(14, 10)
 $rbFiles.Size = New-Object System.Drawing.Size(64, 24)
 $rbFiles.Checked = $true
 $rbFiles.BackColor = [System.Drawing.Color]::Transparent
@@ -1156,44 +1248,53 @@ $scopeBody.Controls.Add($rbFiles)
 
 $rbFolders = New-Object System.Windows.Forms.RadioButton
 $rbFolders.Text = '文件夹'
-$rbFolders.Location = New-Object System.Drawing.Point(86, 18)
+$rbFolders.Location = New-Object System.Drawing.Point(86, 10)
 $rbFolders.Size = New-Object System.Drawing.Size(82, 24)
 $rbFolders.BackColor = [System.Drawing.Color]::Transparent
 $scopeBody.Controls.Add($rbFolders)
 
 $rbBoth = New-Object System.Windows.Forms.RadioButton
 $rbBoth.Text = '两者'
-$rbBoth.Location = New-Object System.Drawing.Point(174, 18)
+$rbBoth.Location = New-Object System.Drawing.Point(174, 10)
 $rbBoth.Size = New-Object System.Drawing.Size(64, 24)
 $rbBoth.BackColor = [System.Drawing.Color]::Transparent
 $scopeBody.Controls.Add($rbBoth)
 
 $chkRecurse = New-Object System.Windows.Forms.CheckBox
 $chkRecurse.Text = '含子目录'
-$chkRecurse.Location = New-Object System.Drawing.Point(250, 18)
+$chkRecurse.Location = New-Object System.Drawing.Point(250, 10)
 $chkRecurse.Size = New-Object System.Drawing.Size(90, 24)
 $chkRecurse.BackColor = [System.Drawing.Color]::Transparent
 $scopeBody.Controls.Add($chkRecurse)
 
-New-FieldLabel -Text '扩展名' -X 366 -Y 16 -Parent $scopeBody
+$lblRecurseHint = New-Object System.Windows.Forms.Label
+$lblRecurseHint.Text = '递归开启后只处理文件，文件夹选项会禁用'
+$lblRecurseHint.Location = New-Object System.Drawing.Point(14, 36)
+$lblRecurseHint.AutoSize = $true
+$lblRecurseHint.Font = $fontSmall
+$lblRecurseHint.ForeColor = Get-Color $script:Ui.Muted
+$lblRecurseHint.BackColor = [System.Drawing.Color]::Transparent
+$scopeBody.Controls.Add($lblRecurseHint)
+
+New-FieldLabel -Text '扩展名' -X 14 -Y 62 -Parent $scopeBody
 $txtExtFilter = New-Object System.Windows.Forms.TextBox
-$txtExtFilter.Location = New-Object System.Drawing.Point(410, 13)
-$txtExtFilter.Size = New-Object System.Drawing.Size(130, 26)
+$txtExtFilter.Location = New-Object System.Drawing.Point(70, 58)
+$txtExtFilter.Size = New-Object System.Drawing.Size(150, 26)
 Initialize-Input -Control $txtExtFilter
 $scopeBody.Controls.Add($txtExtFilter)
 
 $lblExtHint = New-Object System.Windows.Forms.Label
 $lblExtHint.Text = '如 jpg,png（留空=全部）'
-$lblExtHint.Location = New-Object System.Drawing.Point(548, 18)
+$lblExtHint.Location = New-Object System.Drawing.Point(14, 88)
 $lblExtHint.AutoSize = $true
 $lblExtHint.Font = $fontSmall
-$lblExtHint.ForeColor = Get-Color '#9CA3AF'
+$lblExtHint.ForeColor = Get-Color $script:Ui.Muted
 $lblExtHint.BackColor = [System.Drawing.Color]::Transparent
 $scopeBody.Controls.Add($lblExtHint)
 
 $rbInclude = New-Object System.Windows.Forms.RadioButton
 $rbInclude.Text = '仅这些'
-$rbInclude.Location = New-Object System.Drawing.Point(716, 18)
+$rbInclude.Location = New-Object System.Drawing.Point(232, 60)
 $rbInclude.Size = New-Object System.Drawing.Size(76, 24)
 $rbInclude.Checked = $true
 $rbInclude.BackColor = [System.Drawing.Color]::Transparent
@@ -1201,40 +1302,49 @@ $scopeBody.Controls.Add($rbInclude)
 
 $rbExclude = New-Object System.Windows.Forms.RadioButton
 $rbExclude.Text = '排除'
-$rbExclude.Location = New-Object System.Drawing.Point(800, 18)
+$rbExclude.Location = New-Object System.Drawing.Point(314, 60)
 $rbExclude.Size = New-Object System.Drawing.Size(64, 24)
 $rbExclude.BackColor = [System.Drawing.Color]::Transparent
 $scopeBody.Controls.Add($rbExclude)
 
-# 卡片4：预览
-$previewCardY = 496
-$previewCardHeight = $clientHeight - $previewCardY - 20
-$cardPreview = New-CardPanel -Title '预览' -X 24 -Y $previewCardY -Width $cardWidth -Height $previewCardHeight -Parent $viewSequence -FillHeight
+# 卡片4：预览结果（右侧主栏）
+$previewCardWidth = [math]::Max(280, $viewContentWidth - $leftColWidth - 24)
+$previewCardHeight = [math]::Max(280, $clientHeight - 66 - 16)
+$cardPreview = New-CardPanel -Title '预览结果' -X 8 -Y 0 -Width $previewCardWidth -Height $previewCardHeight -Parent $seqSplit.Right -FillHeight
 $previewBody = $cardPreview.Body
-$previewBodyWidth = $cardWidth - 2
+$previewBodyWidth = $previewCardWidth - 2
 $previewBodyHeight = $previewCardHeight - 45
 
 $statsBar = New-Object System.Windows.Forms.Panel
 $statsBar.Location = New-Object System.Drawing.Point(0, 0)
 $statsBar.Size = New-Object System.Drawing.Size($previewBodyWidth, 38)
-$statsBar.BackColor = Get-Color '#FAFBFC'
+$statsBar.BackColor = Get-Color $script:Ui.NavIdle
 $statsBar.Anchor = 'Top,Left,Right'
 $previewBody.Controls.Add($statsBar)
 
 $statsBarLine = New-Object System.Windows.Forms.Panel
 $statsBarLine.Location = New-Object System.Drawing.Point(0, 37)
 $statsBarLine.Size = New-Object System.Drawing.Size($previewBodyWidth, 1)
-$statsBarLine.BackColor = Get-Color '#E2E4E9'
+$statsBarLine.BackColor = Get-Color $script:Ui.Line
 $statsBarLine.Anchor = 'Bottom,Left,Right'
 $statsBar.Controls.Add($statsBarLine)
 
 $lblSeqCount = New-Object System.Windows.Forms.Label
-$lblSeqCount.Text = '共 0 项'
+$lblSeqCount.Text = '尚未预览'
 $lblSeqCount.Location = New-Object System.Drawing.Point(16, 9)
 $lblSeqCount.AutoSize = $true
 $lblSeqCount.Font = $fontSmall
-$lblSeqCount.ForeColor = Get-Color '#6B7280'
+$lblSeqCount.ForeColor = Get-Color $script:Ui.Muted
 $statsBar.Controls.Add($lblSeqCount)
+
+$lblSeqHint = New-Object System.Windows.Forms.Label
+$lblSeqHint.Text = '请先预览'
+$lblSeqHint.AutoSize = $true
+$lblSeqHint.Font = $fontSmall
+$lblSeqHint.ForeColor = Get-Color $script:Ui.Primary
+$lblSeqHint.Anchor = 'Top,Right'
+$lblSeqHint.Location = New-Object System.Drawing.Point(($previewBodyWidth - 90), 9)
+$statsBar.Controls.Add($lblSeqHint)
 
 $lblSeqExec = New-StatTag -X 120 -Y 8 -Parent $statsBar
 $lblSeqUnchanged = New-StatTag -X 220 -Y 8 -Parent $statsBar
@@ -1246,14 +1356,14 @@ Set-StatTag -Label $lblSeqBlocked -Text '有问题 0' -Kind 'Muted'
 $actionBar = New-Object System.Windows.Forms.Panel
 $actionBar.Location = New-Object System.Drawing.Point(0, ($previewBodyHeight - 52))
 $actionBar.Size = New-Object System.Drawing.Size($previewBodyWidth, 52)
-$actionBar.BackColor = Get-Color '#FAFBFC'
+$actionBar.BackColor = Get-Color $script:Ui.NavIdle
 $actionBar.Anchor = 'Bottom,Left,Right'
 $previewBody.Controls.Add($actionBar)
 
 $actionBarLine = New-Object System.Windows.Forms.Panel
 $actionBarLine.Location = New-Object System.Drawing.Point(0, 0)
 $actionBarLine.Size = New-Object System.Drawing.Size($previewBodyWidth, 1)
-$actionBarLine.BackColor = Get-Color '#E2E4E9'
+$actionBarLine.BackColor = Get-Color $script:Ui.Line
 $actionBarLine.Anchor = 'Top,Left,Right'
 $actionBar.Controls.Add($actionBarLine)
 
@@ -1280,7 +1390,7 @@ $btnSeqUndo.Location = New-Object System.Drawing.Point(($previewBodyWidth - 364)
 $btnSeqUndo.Size = New-Object System.Drawing.Size(120, 30)
 $btnSeqUndo.Anchor = 'Bottom,Right'
 $actionBar.Controls.Add($btnSeqUndo)
-Initialize-ButtonStyle -Button $btnSeqUndo -Kind 'Danger'
+Initialize-ButtonStyle -Button $btnSeqUndo
 
 $gridSeq = New-Object System.Windows.Forms.DataGridView
 $gridSeq.Location = New-Object System.Drawing.Point(0, 38)
@@ -1295,9 +1405,9 @@ $previewBody.Controls.Add($gridSeq)
 # 视图2：分段拼接
 # ---------------------------------------------------------------------------
 
-# 卡片1：目标文件夹
-$cardFolderSeg = New-CardPanel -Title '目标文件夹' -X 24 -Y 76 -Width $cardWidth -Height 84 -Parent $viewSegment
-$segBodyWidth = $cardWidth - 2
+# 卡片1：选择目录
+$cardFolderSeg = New-CardPanel -Title '1. 选择目录' -X 16 -Y 8 -Width $leftCardWidth -Height 96 -Parent $segSplit.Left
+$segBodyWidth = $leftCardWidth - 2
 
 $txtSegFolder = New-Object System.Windows.Forms.TextBox
 $txtSegFolder.Location = New-Object System.Drawing.Point(14, 8)
@@ -1313,6 +1423,9 @@ $btnSegBrowse.Size = New-Object System.Drawing.Size(80, 28)
 $btnSegBrowse.Anchor = 'Top,Right'
 $cardFolderSeg.Body.Controls.Add($btnSegBrowse)
 Initialize-ButtonStyle -Button $btnSegBrowse
+$script:PathTip.SetToolTip($txtSeqFolder, '')
+$txtSeqFolder.Add_TextChanged({ $script:PathTip.SetToolTip($txtSeqFolder, $txtSeqFolder.Text) })
+$txtSegFolder.Add_TextChanged({ $script:PathTip.SetToolTip($txtSegFolder, $txtSegFolder.Text) })
 
 # 启动时带了 -Folder 就回填到两个视图，避免用户重复选择路径
 if (-not [string]::IsNullOrWhiteSpace($Folder)) {
@@ -1320,8 +1433,8 @@ if (-not [string]::IsNullOrWhiteSpace($Folder)) {
     $txtSegFolder.Text = $Folder
 }
 
-# 卡片2：组合规则
-$cardSegmentRule = New-CardPanel -Title '组合规则' -X 24 -Y 172 -Width $cardWidth -Height 176 -Parent $viewSegment
+# 卡片2：分段规则 + 命名规则
+$cardSegmentRule = New-CardPanel -Title '2. 分段规则' -X 16 -Y 116 -Width $leftCardWidth -Height 118 -Parent $segSplit.Left
 $segmentRuleBody = $cardSegmentRule.Body
 
 # 标签用短文案，避免「文件名由几段组成」过长压住右侧「连接符」
@@ -1362,35 +1475,36 @@ $lblSegmentHint.Text = '勾选「固定」可自动填入所有行，单元格�
 $lblSegmentHint.Location = New-Object System.Drawing.Point(14, 52)
 $lblSegmentHint.AutoSize = $true
 $lblSegmentHint.Font = $fontSmall
-$lblSegmentHint.ForeColor = Get-Color '#9CA3AF'
+$lblSegmentHint.ForeColor = Get-Color $script:Ui.Muted
 $segmentRuleBody.Controls.Add($lblSegmentHint)
 
+$cardFixed = New-CardPanel -Title '3. 固定填充' -X 16 -Y 246 -Width $leftCardWidth -Height 118 -Parent $segSplit.Left
 $pnlFixedValues = New-Object System.Windows.Forms.Panel
-$pnlFixedValues.Location = New-Object System.Drawing.Point(0, 74)
-$pnlFixedValues.Size = New-Object System.Drawing.Size($segBodyWidth, 48)
+$pnlFixedValues.Location = New-Object System.Drawing.Point(0, 8)
+$pnlFixedValues.Size = New-Object System.Drawing.Size($segBodyWidth, 56)
 $pnlFixedValues.BackColor = [System.Drawing.Color]::White
 $pnlFixedValues.Anchor = 'Top,Left,Right'
-$segmentRuleBody.Controls.Add($pnlFixedValues)
+$cardFixed.Body.Controls.Add($pnlFixedValues)
 
-# 卡片3：分段编辑
-$segmentCardY = 360
-$segmentCardHeight = $clientHeight - $segmentCardY - 20
-$cardSegmentGrid = New-CardPanel -Title '分段编辑' -X 24 -Y $segmentCardY -Width $cardWidth -Height $segmentCardHeight -Parent $viewSegment -FillHeight
+# 卡片3：预览结果（右侧主栏，内含分段编辑）
+$segmentCardWidth = [math]::Max(360, $viewContentWidth - $leftColWidth - 24)
+$segmentCardHeight = [math]::Max(280, $clientHeight - 66 - 16)
+$cardSegmentGrid = New-CardPanel -Title '预览结果' -X 8 -Y 0 -Width $segmentCardWidth -Height $segmentCardHeight -Parent $segSplit.Right -FillHeight
 $segmentGridBody = $cardSegmentGrid.Body
-$segmentBodyWidth = $cardWidth - 2
+$segmentBodyWidth = $segmentCardWidth - 2
 $segmentBodyHeight = $segmentCardHeight - 45
 
 $segStatsBar = New-Object System.Windows.Forms.Panel
 $segStatsBar.Location = New-Object System.Drawing.Point(0, 0)
 $segStatsBar.Size = New-Object System.Drawing.Size($segmentBodyWidth, 38)
-$segStatsBar.BackColor = Get-Color '#FAFBFC'
+$segStatsBar.BackColor = Get-Color $script:Ui.NavIdle
 $segStatsBar.Anchor = 'Top,Left,Right'
 $segmentGridBody.Controls.Add($segStatsBar)
 
 $segStatsBarLine = New-Object System.Windows.Forms.Panel
 $segStatsBarLine.Location = New-Object System.Drawing.Point(0, 37)
 $segStatsBarLine.Size = New-Object System.Drawing.Size($segmentBodyWidth, 1)
-$segStatsBarLine.BackColor = Get-Color '#E2E4E9'
+$segStatsBarLine.BackColor = Get-Color $script:Ui.Line
 $segStatsBarLine.Anchor = 'Bottom,Left,Right'
 $segStatsBar.Controls.Add($segStatsBarLine)
 
@@ -1399,7 +1513,7 @@ $lblSegCount.Text = '共 0 个文件'
 $lblSegCount.Location = New-Object System.Drawing.Point(16, 9)
 $lblSegCount.AutoSize = $true
 $lblSegCount.Font = $fontSmall
-$lblSegCount.ForeColor = Get-Color '#6B7280'
+$lblSegCount.ForeColor = Get-Color $script:Ui.Muted
 $segStatsBar.Controls.Add($lblSegCount)
 
 $lblSegExec = New-StatTag -X 120 -Y 8 -Parent $segStatsBar
@@ -1412,14 +1526,14 @@ Set-StatTag -Label $lblSegBlocked -Text '有问题 0' -Kind 'Muted'
 $segActionBar = New-Object System.Windows.Forms.Panel
 $segActionBar.Location = New-Object System.Drawing.Point(0, ($segmentBodyHeight - 52))
 $segActionBar.Size = New-Object System.Drawing.Size($segmentBodyWidth, 52)
-$segActionBar.BackColor = Get-Color '#FAFBFC'
+$segActionBar.BackColor = Get-Color $script:Ui.NavIdle
 $segActionBar.Anchor = 'Bottom,Left,Right'
 $segmentGridBody.Controls.Add($segActionBar)
 
 $segActionBarLine = New-Object System.Windows.Forms.Panel
 $segActionBarLine.Location = New-Object System.Drawing.Point(0, 0)
 $segActionBarLine.Size = New-Object System.Drawing.Size($segmentBodyWidth, 1)
-$segActionBarLine.BackColor = Get-Color '#E2E4E9'
+$segActionBarLine.BackColor = Get-Color $script:Ui.Line
 $segActionBarLine.Anchor = 'Top,Left,Right'
 $segActionBar.Controls.Add($segActionBarLine)
 
@@ -1458,17 +1572,8 @@ function Show-View {
     $viewSequence.Visible = ($Name -eq 'sequence')
     $viewSegment.Visible = ($Name -eq 'segment')
 
-    foreach ($pair in @(
-            @{ Button = $btnNavSequence; Name = 'sequence' },
-            @{ Button = $btnNavSegment; Name = 'segment' })) {
-        if ($pair.Name -eq $Name) {
-            $pair.Button.BackColor = Get-Color '#2563EB'
-            $pair.Button.ForeColor = [System.Drawing.Color]::White
-        } else {
-            $pair.Button.BackColor = Get-Color '#111827'
-            $pair.Button.ForeColor = Get-Color '#9CA3AF'
-        }
-    }
+    Set-NavButtonState -Button $btnNavSequence -ViewName 'sequence'
+    Set-NavButtonState -Button $btnNavSegment -ViewName 'segment'
 
     # 切换过去时若分段视图还没有文件夹，沿用主视图的路径，避免重复选择
     if ($Name -eq 'segment') {
@@ -1534,10 +1639,24 @@ function Update-ReplaceAvailability {
     }
     if ($usesOriginalName) {
         $lblReplaceHint.Text = '作用于原名称，不含扩展名'
-        $lblReplaceHint.ForeColor = Get-Color '#9CA3AF'
+        $lblReplaceHint.ForeColor = Get-Color $script:Ui.Muted
     } else {
         $lblReplaceHint.Text = '当前模式不使用原名称，不可用'
-        $lblReplaceHint.ForeColor = Get-Color '#B7BCC5'
+        $lblReplaceHint.ForeColor = Get-Color '#94A3B8'
+    }
+}
+
+function Set-SeqHint {
+    param([string]$Text, [ValidateSet('Info', 'Warn', 'Ok')][string]$Kind = 'Info')
+    if (-not $lblSeqHint) { return }
+    $lblSeqHint.Text = $Text
+    switch ($Kind) {
+        'Warn' { $lblSeqHint.ForeColor = Get-Color $script:Ui.Warn }
+        'Ok'   { $lblSeqHint.ForeColor = Get-Color $script:Ui.Success }
+        default { $lblSeqHint.ForeColor = Get-Color $script:Ui.Primary }
+    }
+    if ($statsBar) {
+        $lblSeqHint.Left = [math]::Max(220, $statsBar.Width - $lblSeqHint.PreferredWidth - 16)
     }
 }
 
@@ -1559,6 +1678,9 @@ function Set-SequencePlanDirty {
         $btnSeqExecute.Enabled = $false
         if ($script:Plan.Count -gt 0) {
             $lblSeqCount.Text = '参数已变化，请重新预览。'
+            Set-SeqHint -Text '规则已改' -Kind 'Warn'
+        } elseif ($lblSeqCount) {
+            Set-SeqHint -Text '请先预览' -Kind 'Info'
         }
     }
 }
@@ -1575,6 +1697,8 @@ function Notify-DirectoryChanged {
     $script:SeqPlanDirty = $true
     $script:SegmentStale = $true
     if ($gridSeq) { $gridSeq.DataSource = $null }
+    if ($lblSeqCount) { $lblSeqCount.Text = '尚未预览' }
+    Set-SeqHint -Text '请先预览' -Kind 'Info'
     Update-SequenceExecuteState
     Update-UndoButton
 }
@@ -1621,11 +1745,13 @@ function Update-SequencePreview {
     foreach ($row in $gridSeq.Rows) {
         $status = [string]$row.Cells[5].Value
         if ($script:BlockedStatuses -contains $status) {
-            $row.DefaultCellStyle.ForeColor = Get-Color '#DC2626'
+            $row.DefaultCellStyle.ForeColor = Get-Color $script:Ui.Danger
+            $row.DefaultCellStyle.BackColor = Get-Color $script:Ui.DangerB
         } elseif ($status -eq '未变化') {
-            $row.DefaultCellStyle.ForeColor = Get-Color '#9CA3AF'
+            $row.DefaultCellStyle.ForeColor = Get-Color $script:Ui.Muted
+            $row.DefaultCellStyle.BackColor = Get-Color '#F8FAFC'
         } else {
-            $row.DefaultCellStyle.ForeColor = Get-Color '#1A1D23'
+            $row.DefaultCellStyle.ForeColor = Get-Color $script:Ui.Text
         }
     }
 
@@ -1643,6 +1769,13 @@ function Update-SequencePreview {
         if ($maxText.Length -gt [int]$numDigits.Value) {
             $lblSeqCount.Text = "共 $($script:Plan.Count) 项（注意：最大编号 $maxText 超过 $([int]$numDigits.Value) 位）"
         }
+    }
+    if ($blockedCount -gt 0) {
+        Set-SeqHint -Text '存在冲突，无法执行' -Kind 'Warn'
+    } elseif ($executableCount -gt 0) {
+        Set-SeqHint -Text '已预览，未执行' -Kind 'Info'
+    } else {
+        Set-SeqHint -Text '没有可执行项' -Kind 'Warn'
     }
     return $script:Plan
 }
@@ -1668,38 +1801,49 @@ function Rebuild-FixedControls {
     $script:FixedBoxes = @()
     $script:RestoringFixed = $true
     try {
-        # 槽宽必须严格按容器宽度均分：只要总宽超出容器，最后一段就会被裁掉
+        # 左栏放不下 6 段单行时折行，避免第 5/6 段输入框被裁掉
         $containerWidth = $pnlFixedValues.ClientSize.Width
         if ($containerWidth -le 0) { $containerWidth = $segBodyWidth }
-        $slotWidth = [math]::Floor($containerWidth / $script:SegmentCount)
-        if ($slotWidth -lt 96) { $slotWidth = 96 }
+        $minSlot = 144
+        $cols = [math]::Max(1, [math]::Floor($containerWidth / $minSlot))
+        if ($cols -gt $script:SegmentCount) { $cols = $script:SegmentCount }
+        $slotWidth = [math]::Floor($containerWidth / $cols)
+        $rowCount = [math]::Ceiling($script:SegmentCount / $cols)
+        $rowHeight = 32
         $boxWidth = $slotWidth - 108
-        if ($boxWidth -lt 30) { $boxWidth = 30 }
+        if ($boxWidth -lt 36) { $boxWidth = 36 }
+        $pnlFixedValues.Height = (4 + ($rowCount * $rowHeight))
+        if ($cardFixed -and $cardFixed.Border) {
+            $cardFixed.Border.Height = (45 + 8 + $pnlFixedValues.Height + 8)
+        }
 
         for ($index = 1; $index -le $script:SegmentCount; $index++) {
             $slot = $index
-            $offset = (($index - 1) * $slotWidth)
+            $col = ($index - 1) % $cols
+            $row = [math]::Floor(($index - 1) / $cols)
+            $offset = $col * $slotWidth
+            $top = 4 + ($row * $rowHeight)
 
             $lbl = New-Object System.Windows.Forms.Label
             $lbl.Text = "段$index"
-            $lbl.Location = New-Object System.Drawing.Point($offset, 6)
+            $lbl.Location = New-Object System.Drawing.Point($offset, ($top + 2))
             $lbl.Size = New-Object System.Drawing.Size(36, 22)
             $lbl.BackColor = [System.Drawing.Color]::Transparent
-            $lbl.ForeColor = Get-Color '#6B7280'
+            $lbl.ForeColor = Get-Color $script:Ui.Muted
             $lbl.Font = $fontSmall
             $pnlFixedValues.Controls.Add($lbl)
 
             $chk = New-Object System.Windows.Forms.CheckBox
             $chk.Text = '固定'
-            $chk.Location = New-Object System.Drawing.Point(($offset + 40), 5)
+            $chk.Location = New-Object System.Drawing.Point(($offset + 40), ($top + 1))
             $chk.Size = New-Object System.Drawing.Size(52, 24)
             $chk.BackColor = [System.Drawing.Color]::Transparent
-            $chk.ForeColor = Get-Color '#1A1D23'
+            $chk.ForeColor = Get-Color $script:Ui.Text
             $chk.Tag = $slot
             $pnlFixedValues.Controls.Add($chk)
 
             $box = New-Object System.Windows.Forms.TextBox
-            $box.Location = New-Object System.Drawing.Point(($offset + 98), 4)
+            $box.Location = New-Object System.Drawing.Point(($offset + 98), $top)
             $box.Size = New-Object System.Drawing.Size($boxWidth, 26)
             $box.BorderStyle = 'FixedSingle'
             $box.Font = $fontInput
@@ -1846,11 +1990,13 @@ function Refresh-SegmentStatus {
             $row.Cells[$script:SegmentCount + 1].Value = $plan[$index].NewName
             $row.Cells[$script:SegmentCount + 2].Value = $plan[$index].Status
             if ($script:BlockedStatuses -contains $plan[$index].Status) {
-                $row.DefaultCellStyle.ForeColor = Get-Color '#DC2626'
+                $row.DefaultCellStyle.ForeColor = Get-Color $script:Ui.Danger
+                $row.DefaultCellStyle.BackColor = Get-Color $script:Ui.DangerB
             } elseif ($plan[$index].Status -eq '未变化') {
-                $row.DefaultCellStyle.ForeColor = Get-Color '#9CA3AF'
+                $row.DefaultCellStyle.ForeColor = Get-Color $script:Ui.Muted
+                $row.DefaultCellStyle.BackColor = Get-Color '#F8FAFC'
             } else {
-                $row.DefaultCellStyle.ForeColor = Get-Color '#1A1D23'
+                $row.DefaultCellStyle.ForeColor = Get-Color $script:Ui.Text
             }
         }
 
@@ -1902,9 +2048,13 @@ $chkRecurse.Add_CheckedChanged({
         $rbFiles.Checked = $true
         $rbFolders.Enabled = $false
         $rbBoth.Enabled = $false
+        $lblRecurseHint.Text = '已开启：只处理文件，文件夹/两者已禁用'
+        $lblRecurseHint.ForeColor = Get-Color $script:Ui.Warn
     } else {
         $rbFolders.Enabled = $true
         $rbBoth.Enabled = $true
+        $lblRecurseHint.Text = '递归开启后只处理文件，文件夹选项会禁用'
+        $lblRecurseHint.ForeColor = Get-Color $script:Ui.Muted
     }
     Set-SequencePlanDirty
 })
@@ -1948,6 +2098,7 @@ $btnSeqExecute.Add_Click({
 
         Notify-DirectoryChanged
         $lblSeqCount.Text = '执行完成，请重新预览。'
+        Set-SeqHint -Text '执行完成' -Kind 'Ok'
     } catch {
         [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, '执行失败',
             [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
@@ -2215,6 +2366,22 @@ if ($Diagnose) {
                 $landedValue = [string]$gridSeg.Rows[0].Cells[1].Value
                 Write-Output ("FIXED_CHECK_CELL1={0}" -f $landedValue)
                 if ($landedValue -ne '固定甲') { throw "固定值列错位：段1 列实际为 $landedValue" }
+
+                $savedCount = $script:SegmentCount
+                $script:SegmentCount = 6
+                Rebuild-FixedControls
+                $maxRight = 0
+                foreach ($fixedBox in $script:FixedBoxes) {
+                    $right = $fixedBox.Left + $fixedBox.Width
+                    if ($right -gt $maxRight) { $maxRight = $right }
+                }
+                Write-Output ('GEOM_FIXED6 COUNT=' + $script:FixedBoxes.Count + ' MAX_RIGHT=' + $maxRight + ' PANEL=' + $pnlFixedValues.ClientSize.Width)
+                if ($script:FixedBoxes.Count -ne 6) { throw '固定值应为 6 段' }
+                if ($maxRight -gt $pnlFixedValues.ClientSize.Width) {
+                    throw "6 段固定值溢出：右边界 $maxRight 超过容器 $($pnlFixedValues.ClientSize.Width)"
+                }
+                $script:SegmentCount = $savedCount
+                Rebuild-FixedControls -PreserveValues
             }
         }
 
